@@ -1,36 +1,29 @@
-# Real-Time-Chat-website-like-Whatsapp
-this is the website in which we can chat with our friends by following some simple step.
-Now Follow the steps of Installation below:-<br>
-<h1 align="center">
-<img src="https://i.imgur.com/2MRwfe2.png"  height="320" width="640">
-  </h1>
-  
- ## Requirements
-* [Node.js](https://nodejs.org/en/download/) should be Installed in your Pc (**USE THE LATEST VERSION**)
+# Real-Time Chat (WhatsApp-style)
 
-## Installation
-* Step 1 is to run this command (**GIVEN BELOW**) in terminal of your directory 
-```
-git clone https://github.com/BiasManan2010/Real-Time-Chat-website-like-Whatsapp.git 
-```
-* Step 2 is to run this command in terminal (**GIVEN BELOW**)
-```
+A simple live chat site: open a room, send messages, see them appear for everyone connected.
+
+**Stack:** HTML · CSS · Node.js
+
+## Requirements
+
+- [Node.js](https://nodejs.org/) (current LTS)
+
+## Run locally
+
+```bash
+git clone https://github.com/BiasManan2010/Real-Time-Chat-website-like-Whatsapp.git
 cd Real-Time-Chat-website-like-Whatsapp
-```
-* Step 3 is to run this command in terminal (**GIVEN BELOW**)
-```
 node server.js
 ```
-* Now put this link in your browser
-```
-http://localhost:3000/
-```
-* After Doing Every Step You will Be Seeing Like This
-<h1 align="center">
-<img src="https://i.imgur.com/7TXv7qf.png"
-</h1>
 
-**Now Enjoy The website**
+Open [http://localhost:3000/](http://localhost:3000/).
 
-## Important Note
-IF YOU ARE USING THIS CODE AND PUBLISHING THIS TO GITHUB OR ANY OTHER PAGE SO PLEASE GIVE ME CREDITS BY GIVING MY GITHUB ID URL
+If the project lists extra npm dependencies in `package.json`, run `npm install` first.
+
+## Credits
+
+If you reuse this code, please link back to [BiasManan2010](https://github.com/BiasManan2010).
+
+## Author
+
+**Manan Bharti** ([@BiasManan2010](https://github.com/BiasManan2010))
