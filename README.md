@@ -1,5 +1,7 @@
 # Real-Time Chat (WhatsApp-style)
 
+[![buymeachai](https://img.shields.io/badge/buymeachai-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeachai.in/mananbharti)
+
 A simple live chat site: open a room, send messages, see them appear for everyone connected.
 
 **Stack:** HTML · CSS · Node.js
