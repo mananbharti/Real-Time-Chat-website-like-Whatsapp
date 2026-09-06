@@ -11,7 +11,7 @@ A simple live chat site: open a room, send messages, see them appear for everyon
 ## Run locally
 
 ```bash
-git clone https://github.com/BiasManan2010/Real-Time-Chat-website-like-Whatsapp.git
+git clone https://github.com/mananbharti/Real-Time-Chat-website-like-Whatsapp.git
 cd Real-Time-Chat-website-like-Whatsapp
 node server.js
 ```
@@ -22,8 +22,8 @@ If the project lists extra npm dependencies in `package.json`, run `npm install`
 
 ## Credits
 
-If you reuse this code, please link back to [BiasManan2010](https://github.com/BiasManan2010).
+If you reuse this code, please link back to [mananbharti](https://github.com/mananbharti).
 
 ## Author
 
-**Manan Bharti** ([@BiasManan2010](https://github.com/BiasManan2010))
+**Manan Bharti** ([@mananbharti](https://github.com/mananbharti))
