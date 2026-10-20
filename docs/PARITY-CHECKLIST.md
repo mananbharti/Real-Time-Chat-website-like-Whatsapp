@@ -13,6 +13,7 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 - Per-chat draft recovery, links, full-history search and keyboard shortcuts.
 - Text/photo/video status validation, expiry, audience checks and owner deletion; profile editing/pictures and shared-media access.
 - Expiring/resettable/revocable group invite links with explicit authenticated joining.
+- Group polls with validated options and single-choice votes that sync live; app lock that survives refresh and wrong passwords.
 
 ## Implemented, requiring more reference/device checks
 
@@ -27,7 +28,7 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 
 - Calls, end-to-end encryption, phone/SMS login and account recovery.
 
-- Stickers, polls and location sharing.
+- Stickers and location sharing.
 - Richer group permissions such as admin-only posting and join approvals.
 - Blocking/reporting, disappearing messages, scheduled messages or multi-device draft sync.
 - Downloaded webpage metadata/thumbnails for rich link previews.

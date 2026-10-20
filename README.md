@@ -40,6 +40,7 @@ To try both sides of a conversation, open a second browser profile or an incogni
 | Delivery and read receipts | Quote replies, forwarding and stars  | Per-chat drafts across reloads   |
 | Online and last seen       | Delete for yourself or everyone      | Pin, mute and archive            |
 | Typing and unread counts   | Emoji and safe clickable links       | Right-click and touch menus      |
+| Group polls with live votes | App lock with the account password   | Unicode 17 emoji catalog         |
 | Full-history search        | Shared-media gallery                 | Profile pictures and about lines |
 | Membership-checked access  | Idempotent message retries           | Text/photo/video statuses (24h)  |
 
@@ -132,7 +133,7 @@ Double-click a message or swipe right to reply. Right-click or touch-and-hold fo
 
 ## Project status
 
-This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, blocking/reporting, stickers, polls are not implemented. Statuses have author-only view receipts and timed pause/resume playback. Link cards show the URL host/path, not fetched thumbnails or page metadata.
+This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, blocking/reporting and stickers are not implemented. Statuses have author-only view receipts and timed pause/resume playback. Link cards show the URL host/path, not fetched thumbnails or page metadata.
 
 Messages and media are readable by the server operator. The app needs HTTPS, registration/abuse policies, storage limits, retention/backup plans and a security review before public deployment. Use a single server process unless you add a shared Socket.IO adapter and storage. Real-device testing is still needed beyond Chrome's mobile viewport tests.
 
