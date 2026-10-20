@@ -1269,6 +1269,7 @@ toolsDialog.id = "tools-dialog";
 document.body.append(toolsDialog);
 function showTools(title, point) {
   toolsDialog.querySelectorAll("video,audio").forEach((media) => media.pause());
+  toolsDialog.classList.remove("message-context");
   toolsDialog.replaceChildren();
   toolsDialog.classList.toggle("context-tools", !!point);
   if (point) {
@@ -1728,8 +1729,16 @@ galleryButton.addEventListener("click", async () => {
           toolsDialog.close();
           openMediaViewer(m, result.messages);
         });
-      if(/^(image|video)\//.test(a.mime))link.addEventListener("click",e=>{e.preventDefault();toolsDialog.close();openMediaViewer(m,result.messages)});
-      else{link.target="_blank";link.rel="noopener"}
+      if (/^(image|video)\//.test(a.mime))
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          toolsDialog.close();
+          openMediaViewer(m, result.messages);
+        });
+      else {
+        link.target = "_blank";
+        link.rel = "noopener";
+      }
       if (a.mime.startsWith("image/")) {
         const img = el("img");
         img.src = link.href;
@@ -2473,14 +2482,68 @@ document.querySelector(".sidebar-header h1").textContent = "WhatsApp";
 
 $("show-chats").after(statusButton);
 
+const referenceIcons = {
+  Chats:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" fill-rule="evenodd" d="M22 6.67C22 5.19 20.8 4 19.33 4H1.8a1 1 0 0 0-.85 1.53L3 9v8.33C3 18.81 4.2 20 5.67 20h13.66c1.48 0 2.67-1.2 2.67-2.67V6.67ZM7 10a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2H8a1 1 0 0 1-1-1Zm1 3a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H8Z" clip-rule="evenodd"></path></svg>',
+  Status:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9M12 7v5l3 3"/></svg>',
+  Media:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4zM4 15l5-5 4 4 3-3 4 4M8 9h.01"/></svg>',
+  Calls:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h4l2 5-3 2a12 12 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>',
+  Menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5h.01M12 12h.01M12 19h.01"/></svg>',
+};
+const menuReferenceIcons = {
+  Reply:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="m6.83 12 2.9 2.9c.2.2.3.43.28.7a1 1 0 0 1-.31.7c-.2.18-.43.28-.7.29a.92.92 0 0 1-.7-.29l-4.6-4.6a.96.96 0 0 1 0-1.4l4.6-4.6a.93.93 0 0 1 .69-.28c.27 0 .51.1.71.28.2.2.3.44.3.71 0 .28-.1.51-.3.71L6.83 10H16c1.38 0 2.56.49 3.54 1.46A4.82 4.82 0 0 1 21 15v3c0 .28-.1.52-.29.71A.94.94 0 0 1 20 19a.97.97 0 0 1-.71-.29A.97.97 0 0 1 19 18v-3c0-.83-.3-1.54-.88-2.13A2.9 2.9 0 0 0 16 12H6.83Z"></path></svg>',
+  Star: '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="m8.85 16.82 3.15-1.9 3.15 1.93-.83-3.6 2.78-2.4-3.65-.32L12 7.13l-1.45 3.37-3.65.32 2.78 2.43-.83 3.57Zm3.15.45-4.15 2.5a.9.9 0 0 1-.57.15.97.97 0 0 1-.53-.2 1.2 1.2 0 0 1-.35-.43.87.87 0 0 1-.05-.59l1.1-4.72-3.67-3.18a.96.96 0 0 1-.28-1.08c.07-.18.17-.33.3-.45.13-.11.32-.19.55-.22l4.85-.43 1.88-4.45a.9.9 0 0 1 .38-.45c.18-.1.36-.15.54-.15.18 0 .36.05.54.15.17.1.3.25.39.45l1.87 4.45 4.85.43c.23.03.42.1.55.22a1.07 1.07 0 0 1 .34 1.02.96.96 0 0 1-.31.51l-3.68 3.17 1.1 4.73a.9.9 0 0 1-.05.59c-.08.17-.2.32-.35.44a.97.97 0 0 1-.52.2.9.9 0 0 1-.58-.16L12 17.27Z"></path></svg>',
+  Pin: '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M16 5v7l1.7 1.7a1 1 0 0 1 .3.73V15c0 .28-.1.52-.29.71A.94.94 0 0 1 17 16h-4v5.85c0 .28-.1.52-.29.71a.94.94 0 0 1-.71.29.97.97 0 0 1-.71-.29.97.97 0 0 1-.29-.71V16H7a.97.97 0 0 1-.71-.29A.97.97 0 0 1 6 15v-.57a1.03 1.03 0 0 1 .3-.73L8 12V5a.97.97 0 0 1-.71-.29A.97.97 0 0 1 7 4c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29h8c.28 0 .52.1.71.29.2.19.29.43.29.71 0 .28-.1.52-.29.71A.94.94 0 0 1 16 5Zm-7.15 9h6.3L14 12.85V5h-4v7.85L8.85 14Z"></path></svg>',
+  React:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M15.5 11c.42 0 .77-.15 1.06-.44.3-.29.44-.64.44-1.06 0-.42-.15-.77-.44-1.06A1.4 1.4 0 0 0 15.5 8c-.42 0-.77.15-1.06.44-.3.29-.44.64-.44 1.06 0 .42.15.77.44 1.06.29.3.64.44 1.06.44Zm-7 0c.42 0 .77-.15 1.06-.44.3-.29.44-.64.44-1.06 0-.42-.15-.77-.44-1.06A1.4 1.4 0 0 0 8.5 8c-.42 0-.77.15-1.06.44-.3.29-.44.64-.44 1.06 0 .42.15.77.44 1.06.29.3.64.44 1.06.44ZM12 22a10.1 10.1 0 0 1-9.21-6.1A9.74 9.74 0 0 1 2 12a10.1 10.1 0 0 1 6.1-9.21A9.74 9.74 0 0 1 12 2a10.1 10.1 0 0 1 9.21 6.1c.53 1.22.79 2.52.79 3.9s-.26 2.68-.79 3.9a10.1 10.1 0 0 1-5.31 5.31A9.74 9.74 0 0 1 12 22Zm0-2c2.23 0 4.13-.77 5.68-2.32A7.72 7.72 0 0 0 20 12a7.7 7.7 0 0 0-2.32-5.67A7.72 7.72 0 0 0 12 4a7.7 7.7 0 0 0-5.67 2.33A7.72 7.72 0 0 0 4 12c0 2.23.78 4.13 2.33 5.68A7.72 7.72 0 0 0 12 20Zm0-2.5a5.53 5.53 0 0 0 4.65-2.6c.1-.2.1-.4-.02-.6a.57.57 0 0 0-.53-.3H7.9a.6.6 0 0 0-.53.3.6.6 0 0 0-.02.6A5.5 5.5 0 0 0 12 17.5Z"></path></svg>',
+  Forward:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M19.18 11 15.3 7.12a.97.97 0 0 1-.3-.7c0-.28.1-.52.3-.72.2-.18.44-.28.71-.28.28 0 .5.1.69.28l4.6 4.6c.1.1.17.2.21.32a1.2 1.2 0 0 1 0 .76.88.88 0 0 1-.21.32l-4.6 4.6a.9.9 0 0 1-.7.29c-.27-.01-.5-.1-.7-.29a1 1 0 0 1-.31-.7.87.87 0 0 1 .29-.7l3.9-3.9Zm-6 1H7c-.83 0-1.54.3-2.13.88A2.9 2.9 0 0 0 4 15v3c0 .28-.1.52-.29.71A.94.94 0 0 1 3 19a.97.97 0 0 1-.71-.29A.97.97 0 0 1 2 18v-3c0-1.38.49-2.56 1.46-3.54A4.82 4.82 0 0 1 7 10h6.18L10.3 7.12a.97.97 0 0 1-.3-.7c0-.28.1-.52.3-.72.2-.18.44-.28.71-.28.28 0 .5.1.69.28l4.6 4.6c.1.1.17.2.21.32a1.2 1.2 0 0 1 0 .76.88.88 0 0 1-.21.32l-4.6 4.6a.9.9 0 0 1-.7.29c-.27-.01-.5-.1-.7-.29a1 1 0 0 1-.31-.7.87.87 0 0 1 .29-.7l2.9-2.9Z"></path></svg>',
+  Copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 8h12v12H8zM4 4h12v3M4 4v12h3"/></svg>',
+  "Ask Meta AI":
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5"/></svg>',
+  Report:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 21h20zM12 10v5M12 18h.01"/></svg>',
+  Delete:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
+};
 const baseAccountScreen = showAccount;
 showAccount = function () {
   baseAccountScreen();
   const dialog = $("account-dialog");
   dialog.classList.add("settings-drawer");
   $("account-title").textContent = me.name;
-  const box = $("account-info");
+  dialog.querySelectorAll(".settings-search").forEach((e) => e.remove());
+  const box = $("account-info"),
+    actions = [...box.querySelectorAll("button")];
+  const find = (t) => actions.find((b) => b.textContent.includes(t));
+  const edit = find("Edit profile"),
+    theme = actions.find((b) => b.textContent.includes("theme")),
+    notification = actions.find((b) => b.textContent.includes("notifications")),
+    lock = find("Lock app"),
+    photo = find("Change profile picture"),
+    removePhoto = find("Remove profile picture"),
+    stars = find("Starred messages");
+  box.replaceChildren();
+  const noticeCard = el("div", "settings-notice");
+  noticeCard.innerHTML =
+    '<svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M8 14a7 7 0 1 1 8 0l-1 2H9z"/></svg>';
+  const text = el("div");
+  text.append(
+    el("strong", "", "Choose your notifications"),
+    el("p", "", "Get notifications for messages and groups."),
+  );
+  const choose = el("button", "", "Choose now");
+  choose.type = "button";
+  choose.addEventListener("click", () => notification?.click());
+  text.append(choose);
+  noticeCard.append(text);
+  box.append(noticeCard);
   const summary = el("section", "settings-profile");
+  summary.append(el("span", "sr-only", me.name));
   const profile = userAvatar(me);
   profile.classList.add("settings-avatar");
   const thought = el(
@@ -2489,11 +2552,111 @@ showAccount = function () {
     me.about || "Share a thought",
   );
   thought.type = "button";
-  thought.addEventListener("click", () =>
-    box.querySelector("[data-profile-edit]")?.click(),
-  );
+  thought.addEventListener("click", () => edit?.click());
   summary.append(thought, profile);
-  box.prepend(summary);
+  box.append(summary);
+  function row(title, description, icon, action, aria) {
+    const button = el("button", "tool-row settings-row");
+    button.type = "button";
+    button.setAttribute("aria-label", aria || title);
+    const image = el("span", "settings-row-icon");
+    image.innerHTML = icon;
+    button.append(
+      image,
+      el("span", "settings-row-title", title),
+      el("small", "", description),
+    );
+    button.addEventListener("click", action);
+    box.append(button);
+    return button;
+  }
+  const outline = (path) =>
+    '<svg viewBox="0 0 24 24"><path d="' + path + '"/></svg>';
+  row(
+    "Profile",
+    "Name, profile picture, username",
+    outline("M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8M5 21v-2a7 7 0 0 1 14 0v2"),
+    () => edit?.click(),
+    "Edit profile",
+  );
+  row(
+    "Account",
+    "Security notifications, account info",
+    outline("M7 14a4 4 0 1 1 0-8 4 4 0 0 1 0 8M11 10h11M18 10v3M21 10v3"),
+    () => {
+      const panel = showTools("Account");
+      panel.append(
+        el("p", "info-note", me.name + " · @" + me.handle),
+        el(
+          "p",
+          "info-note",
+          "This independent app uses password sessions. It does not provide WhatsApp security notifications.",
+        ),
+      );
+      if (lock) panel.append(lock);
+    },
+  );
+  row(
+    "Privacy",
+    "App lock, data protection",
+    outline("M5 10h14v11H5zM8 10V7a4 4 0 0 1 8 0v3"),
+    () => {
+      const panel = showTools("Privacy");
+      panel.append(
+        el(
+          "p",
+          "info-note",
+          "Only chat members can read messages. Messages are stored on this server, not end-to-end encrypted. Blocking and disappearing messages are not implemented.",
+        ),
+      );
+      if (lock) panel.append(lock);
+    },
+  );
+  row("Chats", "Theme, chat settings", referenceIcons.Chats, () => {
+    const panel = showTools("Chats");
+    for (const b of [theme, stars].filter(Boolean)) panel.append(b);
+  });
+  row(
+    "Notifications",
+    "Messages, groups, sounds",
+    outline("M6 17h12l-2-3V9a4 4 0 0 0-8 0v5zM10 21h4"),
+    () => notification?.click(),
+  );
+  row(
+    "Keyboard shortcuts",
+    "Quick actions",
+    outline("M2 5h20v14H2zM6 9h1M10 9h1M14 9h1M18 9h1M7 15h10"),
+    () => {
+      const panel = showTools("Keyboard shortcuts");
+      panel.append(
+        el("p", "info-note", "Ctrl/Cmd + K: search chats"),
+        el("p", "info-note", "Ctrl/Cmd + F: search this conversation"),
+        el("p", "info-note", "Alt + N: new chat"),
+        el("p", "info-note", "Escape: close tools or return to chats"),
+      );
+    },
+  );
+  row(
+    "Help and feedback",
+    "About this independent build",
+    outline(
+      "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M9 9a3 3 0 1 1 4 3v2M12 17h.01",
+    ),
+    () => {
+      const panel = showTools("About");
+      panel.append(
+        el(
+          "p",
+          "info-note",
+          "Independent WhatsApp-style chat project. Not affiliated with WhatsApp or Meta. Calls, Meta AI and end-to-end encryption are not available.",
+        ),
+      );
+    },
+  );
+  if (lock) {
+    lock.classList.add("settings-row");
+    box.append(lock);
+  }
   const search = el("input", "settings-search");
   search.placeholder = "Search";
   search.setAttribute("aria-label", "Search settings");
@@ -2504,25 +2667,47 @@ showAccount = function () {
         .toLowerCase()
         .includes(search.value.toLowerCase());
   });
-  const edit = [...box.querySelectorAll(".tool-row")].find(
-    (b) => b.textContent === "Edit profile",
-  );
-  if (edit) {
-    edit.dataset.profileEdit = "true";
-    edit.classList.add("settings-row");
-    edit.replaceChildren(
-      el("span", "settings-row-icon", "◎"),
-      el("span", "settings-row-title", "Profile"),
-      el("small", "", "Name, profile picture, username"),
-    );
-  }
-  for (const b of box.querySelectorAll(".tool-row"))
-    b.classList.add("settings-row");
 };
 $("account-dialog").addEventListener("close", () => {
   document.querySelectorAll(".settings-search").forEach((e) => e.remove());
 });
 
+const baseMessageMenu = showMessageMenu;
+showMessageMenu = function (message, point) {
+  baseMessageMenu(message, point);
+  toolsDialog.classList.add("message-context");
+  for (const b of toolsDialog.querySelectorAll(".tool-row")) {
+    const label = b.textContent;
+    const visual =
+      label === "Copy text"
+        ? "Copy"
+        : label === "Star message"
+          ? "Star"
+          : label === "Unstar message"
+            ? "Unstar"
+            : label;
+    const key = /Delete/.test(label)
+      ? "Delete"
+      : /star/i.test(label)
+        ? "Star"
+        : /Copy/.test(label)
+          ? "Copy"
+          : label;
+    const icon = el("span", "menu-row-icon");
+    if (menuReferenceIcons[key]) icon.innerHTML = menuReferenceIcons[key];
+    b.setAttribute("aria-label", label);
+    b.replaceChildren(icon, el("span", "", visual));
+  }
+  if (point) {
+    toolsDialog.style.left =
+      Math.max(8, Math.min(point.x, innerWidth - 170)) + "px";
+    toolsDialog.style.top =
+      Math.max(
+        54,
+        Math.min(point.y, innerHeight - toolsDialog.scrollHeight - 12),
+      ) + "px";
+  }
+};
 function showMainMenu() {
   const r = $("mobile-account").getBoundingClientRect(),
     box = showTools("Main menu", { x: r.x, y: r.bottom + 4 });
