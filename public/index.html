@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#126c5b">
+  <title>Gather - real-time chat</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/socket.io/socket.io.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar" aria-label="Your rooms">
+      <a class="brand" href="/" aria-label="Gather home"><span class="brand-icon" aria-hidden="true">g.</span> gather<span class="brand-dot">●</span></a>
+      <div class="sidebar-heading"><h1>Your space,<br>in good company.</h1><p>Small rooms. Real conversations.</p></div>
+      <div class="section-label">YOUR ROOM <span>01</span></div>
+      <div class="room-card"><span class="room-icon" aria-hidden="true">#</span><div><strong id="sidebar-room">general</strong><span id="room-preview">Join to start a conversation</span></div><span class="room-dot" aria-hidden="true"></span></div>
+      <section class="people" aria-label="Online members"><div class="section-label">IN THE ROOM <span id="member-count">0</span></div><ul id="members"></ul></section>
+      <div class="sidebar-note"><span aria-hidden="true">↗</span><p>A link is all it takes.<br>Invite someone into your room.</p></div>
+      <footer><span class="small-dot"></span> A little closer, wherever you are.</footer>
+    </aside>
+    <section class="conversation" aria-label="Conversation">
+      <header class="chat-header"><div class="header-avatar" aria-hidden="true">#</div><div class="header-title"><div class="eyebrow">THE CONVERSATION</div><h2 id="room-title">general</h2><p id="connection-status" role="status">Connecting...</p></div><button id="invite" class="subtle-button" type="button" disabled>Copy room link <span aria-hidden="true">↗</span></button><button id="change-room" class="icon-button" type="button" aria-label="Change name or room">⇄</button></header>
+      <div class="chat-body" id="chat-body"><div class="day-divider"><span>RECENT CONVERSATION</span></div><div class="welcome" id="welcome"><div class="welcome-symbol" aria-hidden="true">✳</div><h3>Good conversations start here.</h3><p>Say hello. Share an idea. Make yourself at home.</p></div><ol id="messages" aria-label="Messages" aria-live="polite" aria-relevant="additions"></ol></div>
+      <div id="typing" role="status" class="typing"></div>
+      <div id="notice" role="alert" class="notice" hidden></div>
+      <form id="message-form" class="composer"><label for="message-input" class="sr-only">Message</label><textarea id="message-input" placeholder="Write a message..." maxlength="2000" rows="1" disabled></textarea><span id="character-count" aria-hidden="true">0/2000</span><button id="send" type="submit" aria-label="Send message" disabled><span aria-hidden="true">↑</span></button></form>
+      <div class="composer-note">Enter to send · Shift + Enter for a new line <span>Guest chat · not end-to-end encrypted</span></div>
+    </section>
+  </main>
+  <dialog id="join-dialog" aria-labelledby="join-title">
+    <form id="join-form"><div class="dialog-mark" aria-hidden="true">g.</div><div class="eyebrow">PULL UP A CHAIR</div><h2 id="join-title">Let's get you in.</h2><p>Choose a name and a room. Anyone with the same room name can join.</p><label for="username-input">Your name</label><input id="username-input" name="username" placeholder="e.g. Alex" maxlength="24" autocomplete="nickname" required><label for="room-input">Room name</label><input id="room-input" name="room" value="general" pattern="[a-z0-9][a-z0-9-]{0,31}" maxlength="32" required aria-describedby="room-help"><small id="room-help">Lowercase letters, numbers and hyphens. No spaces.</small><p id="join-error" class="error" role="alert"></p><button id="join-button" type="submit">Join the conversation <span aria-hidden="true">→</span></button><small class="privacy-note">Guest names are not verified. Recent messages stay in server memory until a restart or room eviction. This is a demo, not a private messenger.</small></form>
+  </dialog>
+</body>
+</html>
