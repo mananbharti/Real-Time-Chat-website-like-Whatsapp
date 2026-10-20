@@ -3259,7 +3259,6 @@ function unavailableRail(label) {
   b.type = "button";
   b.setAttribute("aria-label", label);
   b.title = label + " is not implemented in this independent build";
-  b.setAttribute("aria-disabled", "true");
   b.addEventListener("click", () =>
     toast(label + " is not implemented in this independent build."),
   );
