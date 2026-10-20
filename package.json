@@ -1,7 +1,7 @@
 {
   "name": "real-time-chat",
   "version": "1.0.0",
-  "description": "A responsive guest-room chat demo built with Express and Socket.IO",
+  "description": "Persistent real-time messaging with accounts, direct/group chats, voice notes, polls and a responsive WhatsApp-style interface",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

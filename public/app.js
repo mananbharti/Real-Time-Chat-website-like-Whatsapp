@@ -797,6 +797,8 @@ async function showContacts() {
   $("contact-search").value = "";
   setContactMode(false);
   $("contacts-dialog").showModal();
+  $("contact-search").focus();
+  $("contact-search").focus();
   await loadContacts();
 }
 async function createChat(kind, members) {
@@ -2127,3 +2129,63 @@ function showMainMenu(){
 }
 
 if(menuReferenceIcons['Ask Meta AI']){ai.innerHTML=menuReferenceIcons['Ask Meta AI'];ai.classList.add('reference-icon');}
+
+// Contact picker follows the measured left drawer, retaining app-account semantics.
+$('contacts-dialog').classList.add('contacts-drawer');
+$('close-contacts').innerHTML='<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6M8 12h12"/></svg>';
+$('contacts-dialog').querySelector('header').prepend($('close-contacts'));
+$('contacts-dialog').querySelector('header').after($('contact-search'));
+$('contact-search').placeholder='Search name or @username';
+const contactActions=el('div','contact-actions');
+const pickerGroup=$('group-mode');pickerGroup.classList.add('contact-option');const groupTitle=el('span','','New group'),groupIcon=el('span','contact-option-icon');groupIcon.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7v6M14 10h6"/></svg>';pickerGroup.replaceChildren(groupIcon,groupTitle);contactActions.append(pickerGroup);
+for(const [title,icon]of [['New contact','M12 5v14M5 12h14'],['New community','M4 20v-3a5 5 0 0 1 10 0v3M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 6v8M14 10h8']]){const b=el('button','contact-option');b.type='button';const circle=el('span','contact-option-icon');circle.innerHTML='<svg viewBox="0 0 24 24"><path d="'+icon+'"/></svg>';b.append(circle,el('span','',title));b.addEventListener('click',()=>toast(title==='New contact'?'Contacts are registered accounts in this app. Search for their username.':'Communities are not implemented in this independent build.'));contactActions.append(b);}
+$('contact-search').after(contactActions);
+const originalContactMode=setContactMode;setContactMode=function(group){originalContactMode(group);contactActions.hidden=group;$('direct-mode').hidden=!group;};
+
+// Contact picker follows the measured left drawer, retaining app-account semantics.
+$('contacts-dialog').classList.add('contacts-drawer');
+$('close-contacts').innerHTML='<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6M8 12h12"/></svg>';
+$('contacts-dialog').querySelector('header').prepend($('close-contacts'));
+$('contacts-dialog').querySelector('header').after($('contact-search'));
+$('contact-search').placeholder='Search name or @username';
+const contactActions=el('div','contact-actions');
+const pickerGroup=$('group-mode');pickerGroup.classList.add('contact-option');const groupTitle=el('span','','New group'),groupIcon=el('span','contact-option-icon');groupIcon.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7v6M14 10h6"/></svg>';pickerGroup.replaceChildren(groupIcon,groupTitle);contactActions.append(pickerGroup);
+for(const [title,icon]of [['New contact','M12 5v14M5 12h14'],['New community','M4 20v-3a5 5 0 0 1 10 0v3M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 6v8M14 10h8']]){const b=el('button','contact-option');b.type='button';const circle=el('span','contact-option-icon');circle.innerHTML='<svg viewBox="0 0 24 24"><path d="'+icon+'"/></svg>';b.append(circle,el('span','',title));b.addEventListener('click',()=>toast(title==='New contact'?'Contacts are registered accounts in this app. Search for their username.':'Communities are not implemented in this independent build.'));contactActions.append(b);}
+$('contact-search').after(contactActions);
+const originalContactMode=setContactMode;setContactMode=function(group){originalContactMode(group);contactActions.hidden=group;$('direct-mode').hidden=!group;};
+
+// Information takes the same full conversation-column surface as the reference.
+$('info-dialog').classList.add('conversation-drawer');
+$('info-dialog').querySelector('header').prepend($('close-info'));
+$('chat-info').addEventListener('click',()=>{
+ const c=active();if(!c)return;
+ const box=$('info-content'),saved=[...box.querySelectorAll('button')];box.replaceChildren();
+ $('info-title').textContent=c.kind==='group'?'Group info':'Contact info';
+ const person=c.kind==='direct'?c.members.find(u=>u.id!==me.id):null;
+ const summary=el('section','info-profile'),image=c.kind==='group'?avatar(c.name,true):userAvatar(person);image.classList.add('info-profile-avatar');summary.append(image,el('h3','',c.name),el('p','',person?'@'+person.handle:c.members.length+' members'));
+ if(person?.about)summary.append(el('p','',person.about));box.append(summary);
+ function action(title,description,icon,fn){const b=toolButton(box,title,fn);b.classList.add('info-action');const glyph=el('span','info-action-icon');glyph.innerHTML=icon||'';const words=el('span');words.append(el('span','',title));if(description)words.append(el('small','',description));b.replaceChildren(glyph,words);return b;}
+ action('Media, links and docs','',referenceIcons.Media,()=>{$('info-dialog').close();galleryButton.click();});
+ action('Starred messages','',menuReferenceIcons.Star,async()=>{const result=await api('/api/starred');const panel=showTools('Starred messages');for(const m of result.messages.filter(m=>m.chatId===c.id))toolButton(panel,m.senderName+': '+preview(m),()=>{toolsDialog.close();$('info-dialog').close();});if(!panel.querySelector('.tool-row'))panel.append(el('p','info-note','No starred messages in this conversation.'));});
+ action(c.prefs?.muted?'Unmute notifications':'Mute notifications','',referenceIcons.Status,async()=>{await setPrefs(c,'muted',!c.prefs?.muted);$('info-dialog').close();});
+ action('Chat theme','Use light or dark theme',referenceIcons.Chats,()=>{toggleTheme();$('info-dialog').close();});
+ const privacy=el('p','info-security-note','Only chat members can access these messages. This independent app stores messages on its server. It does not provide end-to-end encryption.');box.append(privacy);
+ if(c.kind==='group'){
+  box.append(el('h4','info-section-title','Members'));
+  for(const user of c.members){const row=el('div','info-member');row.append(userAvatar(user),el('span','',user.name+(user.id===c.ownerId?' · owner':'')));box.append(row);}
+  for(const button of saved.filter(b=>b.textContent==='Manage group'))box.append(button);
+ }else{box.append(el('h4','info-section-title','About and username'),el('p','info-about',person?.about||'Available'),el('p','info-about','@'+person.handle));}
+});
+
+// Reuse the working history-search surface without hiding the server-backed route.
+const searchPanel=$('message-search-bar');searchPanel.classList.add('conversation-search-drawer');
+const searchHeading=el('header','search-drawer-header');searchHeading.append($('close-message-search'),el('h2','','Search messages'));searchPanel.prepend(searchHeading);
+const searchResults=el('div','drawer-search-results');searchPanel.append(searchResults);
+let searchTimer,searchSequence=0;
+function searchDrawerHint(){searchResults.replaceChildren(el('p','search-drawer-hint','Search for messages with '+(active()?.name||'this conversation')+'.'));}
+$('search-messages-toggle').addEventListener('click',()=>{searchDrawerHint();$('message-search').focus();});
+$('message-search').addEventListener('input',()=>{clearTimeout(searchTimer);const generation=++searchSequence;const q=$('message-search').value.trim();if(!q){searchDrawerHint();return;}searchTimer=setTimeout(async()=>{try{const result=await api(`/api/chats/${activeId}/search?q=${encodeURIComponent(q)}`);if(generation!==searchSequence||searchPanel.hidden)return;searchResults.replaceChildren();if(!result.messages.length)searchResults.append(el('p','search-drawer-hint','No messages found.'));for(const message of result.messages){const b=el('button','search-result');b.type='button';b.append(el('small','',new Date(message.createdAt).toLocaleDateString()),el('span','',preview(message)));b.addEventListener('click',async()=>{searchPanel.hidden=true;await openChat(message.chatId);const item=[...$('messages').children].find(x=>x.dataset.messageId===message.id);if(item){item.scrollIntoView({block:'center'});item.classList.add('search-match');}else toast('This result is older. Use Load earlier messages to reach it.');});searchResults.append(b);}}catch(e){toast(e.message);}},200);});
+$('message-search').placeholder='Search';
+const jumpToDate=el('button','jump-to-date icon-button');jumpToDate.type='button';jumpToDate.setAttribute('aria-label','Jump to date');jumpToDate.title='Jump to date is not implemented';jumpToDate.innerHTML='<svg viewBox="0 0 24 24"><rect x="3" y="5" width="16" height="15" rx="2"/><path d="M7 3v4M15 3v4M3 10h16"/><circle cx="17" cy="17" r="4"/><path d="m20 20 3 3"/></svg>';jumpToDate.addEventListener('click',()=>toast('Jump to date is not yet implemented. Search by message text.'));searchPanel.append(jumpToDate);
+function searchAffordances(){allSearchButton.hidden=!$('message-search').value.trim();$('search-count').hidden=!$('message-search').value.trim();}
+$('search-messages-toggle').addEventListener('click',searchAffordances);$('message-search').addEventListener('input',searchAffordances);

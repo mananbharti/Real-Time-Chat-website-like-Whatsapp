@@ -4,7 +4,7 @@
 
 ### Familiar conversations. Built from the ground up.
 
-A WhatsApp-style messaging app with real accounts, persistent chats, voice notes and a carefully built dark interface.
+A WhatsApp-style messaging app with real accounts, persistent chats, voice notes and a responsive light/dark interface.
 
 **Node.js 22+** · **Express** · **Socket.IO** · **SQLite** · **Vanilla JavaScript**
 

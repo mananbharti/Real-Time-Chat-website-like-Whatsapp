@@ -448,3 +448,14 @@ test('real poll voting syncs between clients and app lock survives refresh and w
  await a.getByLabel('Unlock password').fill('Browser-test-password-123');await a.getByRole('button',{name:'Unlock',exact:true}).click();await expect(a.locator('#connection-status')).toHaveText('Connected');await expect(a.locator('#app')).toBeVisible();await openFromList(a,'Voter');await expect(a.locator('.poll-count').last()).toHaveText('1');
  await ac.close();await bc.close();
 });
+
+test('measured desktop drawers keep real contacts, searchable history results and clear unsupported controls',async({browser})=>{
+ const ac=await browser.newContext({viewport:{width:1280,height:713}}),bc=await browser.newContext();const a=await ac.newPage(),b=await bc.newPage(),id=stamp();
+ await register(a,'Casey','casey_'+id);await register(b,'Rowan','rowan_'+id);
+ await a.getByRole('button',{name:'New chat',exact:true}).click();let bounds=await a.locator('#contacts-dialog').boundingBox();expect(bounds.x).toBe(65);expect(bounds.height).toBe(713);expect(bounds.width).toBe(511);
+ await a.getByRole('button',{name:'New contact',exact:true}).click();await expect(a.locator('#toast')).toContainText('registered accounts');await a.locator('.contact').filter({hasText:'Rowan'}).click();
+ await send(a,'A distinctive searchable message');await a.getByRole('button',{name:'Conversation info',exact:true}).click();bounds=await a.locator('#info-dialog').boundingBox();expect(bounds.x).toBe(576);expect(bounds.width).toBe(704);await expect(a.locator('.info-profile')).toContainText('Rowan');await a.getByRole('button',{name:'Close info'}).click();
+ await a.getByRole('button',{name:'Search messages',exact:true}).click();bounds=await a.locator('#message-search-bar').boundingBox();expect(bounds.x).toBe(576);expect(bounds.height).toBe(713);
+ await a.getByLabel('Search conversation',{exact:true}).fill('distinctive searchable');await expect(a.locator('.search-result')).toHaveCount(1);await a.locator('.search-result').click();await expect(a.locator('#message-search-bar')).not.toBeVisible();await expect(a.locator('.message.search-match')).toContainText('distinctive searchable');
+ await a.getByRole('button',{name:'Calls',exact:true}).click();await expect(a.locator('#toast')).toContainText('not implemented');await ac.close();await bc.close();
+});

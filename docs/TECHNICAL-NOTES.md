@@ -2,7 +2,7 @@
 
 [![buymeachai](https://img.shields.io/badge/buymeachai-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeachai.in/mananbharti)
 
-An independent chat app rebuilt with Express, Socket.IO, SQLite and plain HTML/CSS/JavaScript. The dark interface follows WhatsApp-style chat patterns. **This is not WhatsApp, does not connect to WhatsApp, and does not provide end-to-end encryption.**
+An independent chat app rebuilt with Express, Socket.IO, SQLite and plain HTML/CSS/JavaScript. The light/dark interface follows WhatsApp-style chat patterns. **This is not WhatsApp, does not connect to WhatsApp, and does not provide end-to-end encryption.**
 
 ## Run
 
