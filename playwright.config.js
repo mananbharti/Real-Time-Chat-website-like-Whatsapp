@@ -4,6 +4,7 @@ module.exports = defineConfig({
   timeout: 60000,
   workers: 1,
   use: {
+    viewport: { width: 1280, height: 713 },
     launchOptions: {
       executablePath: process.env.CHROME_PATH || undefined,
       args: [

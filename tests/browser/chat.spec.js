@@ -458,35 +458,6 @@ test("group owner can rename, add and remove members; removed client loses the c
   await a.getByRole("button", { name: "Remove Added", exact: true }).click();
   await expect(c.locator(".chat-item")).toHaveCount(0);
   await expect(c.locator("#active-chat")).not.toBeVisible();
-  await a.getByRole("button", { name: "Account and sign out" }).click();
-  await a.getByRole("button", { name: "Edit profile", exact: true }).click();
-  let bounds = await a.locator("#tools-dialog").boundingBox();
-  expect(bounds.x).toBe(65);
-  expect(bounds.width).toBe(511);
-  expect(bounds.height).toBe(713);
-  await a.getByLabel("Display name", { exact: true }).fill("Casey Updated");
-  await a.getByRole("button", { name: "Save profile", exact: true }).click();
-  await expect(a.locator("#toast")).toContainText("Profile saved");
-  await a.getByRole("button", { name: "Account and sign out" }).click();
-  await a
-    .locator("#account-dialog")
-    .getByRole("button", { name: "Chats", exact: true })
-    .click();
-  await a
-    .getByRole("button", { name: "Switch to dark theme", exact: true })
-    .click();
-  await expect(a.locator("#tools-dialog")).not.toBeVisible();
-  await expect(a.locator("#account-dialog")).not.toBeVisible();
-  await a.reload();
-  await expect(a.locator("#connection-status")).toHaveText("Connected");
-  await expect(a.locator("body")).not.toHaveClass(/light/);
-  await a.setViewportSize({ width: 390, height: 844 });
-  await a.locator(".chat-item").filter({ hasText: "Rowan" }).click();
-  await expect(a.locator("#message-input")).toBeVisible();
-  await send(a, "Still works in mobile dark mode");
-  await expect(a.locator(".message").last()).toContainText(
-    "Still works in mobile dark mode",
-  );
   await ac.close();
   await bc.close();
   await cc.close();
@@ -592,6 +563,35 @@ test("measured desktop drawers keep real contacts, searchable history results an
   );
   await a.getByRole("button", { name: "Calls", exact: true }).click();
   await expect(a.locator("#toast")).toContainText("not implemented");
+  await a.getByRole("button", { name: "Account and sign out" }).click();
+  await a.getByRole("button", { name: "Edit profile", exact: true }).click();
+  bounds = await a.locator("#tools-dialog").boundingBox();
+  expect(bounds.x).toBe(65);
+  expect(bounds.width).toBe(511);
+  expect(bounds.height).toBe(713);
+  await a.getByLabel("Display name", { exact: true }).fill("Casey Updated");
+  await a.getByRole("button", { name: "Save profile", exact: true }).click();
+  await expect(a.locator("#toast")).toContainText("Profile saved");
+  await a.getByRole("button", { name: "Account and sign out" }).click();
+  await a
+    .locator("#account-dialog")
+    .getByRole("button", { name: "Chats", exact: true })
+    .click();
+  await a
+    .getByRole("button", { name: "Switch to dark theme", exact: true })
+    .click();
+  await expect(a.locator("#tools-dialog")).not.toBeVisible();
+  await expect(a.locator("#account-dialog")).not.toBeVisible();
+  await a.reload();
+  await expect(a.locator("#connection-status")).toHaveText("Connected");
+  await expect(a.locator("body")).not.toHaveClass(/light/);
+  await a.setViewportSize({ width: 390, height: 844 });
+  await a.locator(".chat-item").filter({ hasText: "Rowan" }).click();
+  await expect(a.locator("#message-input")).toBeVisible();
+  await send(a, "Still works in mobile dark mode");
+  await expect(a.locator(".message").last()).toContainText(
+    "Still works in mobile dark mode",
+  );
   await ac.close();
   await bc.close();
 });
