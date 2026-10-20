@@ -167,6 +167,7 @@ test("voice recording produces an actual playable attachment, emoji, reconnect a
     .poll(() => b.locator("#messages audio").evaluate((a) => a.currentTime))
     .toBeGreaterThan(0);
   await a.getByRole("button", { name: "Choose emoji" }).click();
+  await a.getByRole("textbox",{name:"Search emoji",exact:true}).fill("thumbs up");
   await a.getByRole("button", { name: "Insert 👍", exact: true }).click();
   await a.getByLabel("Message", { exact: true }).press("Enter");
   await expect(b.locator(".message-text")).toHaveText("👍");
@@ -651,5 +652,70 @@ test("photo and video statuses preview, share, play, survive refresh and delete 
   await a.locator("#tools-dialog").getByRole("button",{name:/^Status author ·/}).first().click();
   await a.getByRole("button",{name:"Delete my status",exact:true}).click();
   await expect(a.locator("#tools-dialog").getByRole("button",{name:/^Status author ·/})).toHaveCount(1);
+  await Promise.all(contexts.map(c=>c.close()));
+});
+
+test("status playback pauses, advances on time and gives the author actual view receipts", async ({browser},testInfo) => {
+  const contexts=await Promise.all([browser.newContext(),browser.newContext({viewport:{width:390,height:844}})]);
+  const [a,b]=await Promise.all(contexts.map(x=>x.newPage()));
+  await register(a,"Playback author","pa_"+stamp());await register(b,"Playback viewer","pv_"+stamp());await direct(a,"Playback viewer");
+  await contexts[0].request.post("/api/stories",{data:{text:"First timed status",color:1}});
+  await contexts[0].request.post("/api/stories",{data:{text:"Second timed status",color:2}});
+  await b.getByRole("button",{name:"Account",exact:true}).click();await b.getByRole("button",{name:"Status updates",exact:true}).click();
+  await b.locator("#tools-dialog").getByRole("button",{name:/^Playback author ·/}).first().click();
+  await expect(b.locator(".story-card")).toHaveText("Second timed status");
+  await expect.poll(()=>b.locator(".story-progress").evaluate(p=>p.value)).toBeGreaterThan(0.05);
+  await b.getByRole("button",{name:"Pause status",exact:true}).click();
+  const paused=await b.locator(".story-progress").evaluate(p=>p.value);
+  await b.waitForTimeout(600);
+  expect(await b.locator(".story-progress").evaluate(p=>p.value)).toBe(paused);
+  await b.screenshot({path:testInfo.outputPath("story-progress-mobile.png")});
+  await a.getByRole("button",{name:"Status updates",exact:true}).click();await a.locator("#tools-dialog").getByRole("button",{name:/^Playback author ·/}).first().click();
+  await a.getByRole("button",{name:"View status receipts",exact:true}).click();
+  await expect(a.locator("#tools-dialog")).toContainText("Playback viewer");
+  await a.screenshot({path:testInfo.outputPath("story-view-receipts.png")});
+  await b.getByRole("button",{name:"Resume status",exact:true}).click();
+  await expect(b.locator(".story-card")).toHaveText("First timed status",{timeout:7000});
+  await b.getByRole("button",{name:"Pause status",exact:true}).click();
+  await b.keyboard.press("ArrowLeft");
+  await expect(b.locator(".story-card")).toHaveText("Second timed status");
+  await b.getByRole("button",{name:"Pause status",exact:true}).click();
+  await b.getByRole("button",{name:"Close tools",exact:true}).click();
+  await expect(b.locator(".story-card")).not.toBeVisible();
+  await Promise.all(contexts.map(x=>x.close()));
+});
+
+test("Unicode 17 catalog has working categories, skin tones, search, artwork and insertion", async ({browser},testInfo)=>{
+  const contexts=await Promise.all([browser.newContext({viewport:{width:1280,height:713}}),browser.newContext()]);const [a,b]=await Promise.all(contexts.map(c=>c.newPage()));
+  await register(a,"Emoji author","ea_"+stamp());await register(b,"Emoji friend","ef_"+stamp());await direct(a,"Emoji friend");
+  await a.getByRole("button",{name:"Choose emoji",exact:true}).click();
+  const all=await a.evaluate(()=>emojiCatalog);
+  expect(all).toHaveLength(3953);
+  await a.getByRole("button",{name:"Animals & Nature",exact:true}).click();
+  await expect(a.getByRole("button",{name:"Insert 🦊",exact:true})).toBeVisible();
+  await a.screenshot({path:testInfo.outputPath("emoji-animals-desktop.png")});
+  await a.getByRole("button",{name:"Flags",exact:true}).click();
+  await a.getByRole("textbox",{name:"Search emoji",exact:true}).fill("flag: India");
+  await expect(a.getByRole("button",{name:"Insert 🇮🇳",exact:true})).toBeVisible();
+  await expect.poll(()=>a.getByRole("button",{name:"Insert 🇮🇳",exact:true}).locator("img").evaluate(i=>i.complete&&i.naturalWidth>0)).toBe(true);
+  await a.getByRole("button",{name:"Insert 🇮🇳",exact:true}).click();
+  await expect(a.locator("#message-input")).toHaveValue("🇮🇳");
+  await a.getByRole("button",{name:"Smileys & People",exact:true}).click();
+  await a.getByLabel("Emoji skin tone",{exact:true}).selectOption("1F3FD");
+  await a.getByRole("textbox",{name:"Search emoji",exact:true}).fill("thumbs up");
+  await a.getByRole("button",{name:"Insert 👍🏽",exact:true}).click();
+  await expect(a.locator("#message-input")).toHaveValue("🇮🇳👍🏽");
+  await a.getByRole("textbox",{name:"Search emoji",exact:true}).fill("orca");
+  await expect(a.getByRole("button",{name:"Insert 🫍",exact:true})).toBeVisible();
+  await a.getByRole("button",{name:"Insert 🫍",exact:true}).click();
+  await a.getByRole("button",{name:"Choose emoji",exact:true}).click();
+  await a.getByRole("button",{name:"Send message",exact:true}).click();
+  await expect(a.locator(".message-text .color-emoji")).toHaveCount(3);
+  await expect.poll(()=>a.locator(".message-text .color-emoji").evaluateAll(es=>es.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
+  await a.setViewportSize({width:390,height:844});
+  await a.getByRole("button",{name:"Choose emoji",exact:true}).click();
+  await a.getByRole("textbox",{name:"Search emoji",exact:true}).fill("thumbs up");
+  await a.screenshot({path:testInfo.outputPath("emoji-tones-mobile.png")});
+  expect(await a.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await Promise.all(contexts.map(c=>c.close()));
 });

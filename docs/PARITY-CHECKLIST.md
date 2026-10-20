@@ -26,7 +26,7 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 ## Not implemented
 
 - Calls, end-to-end encryption, phone/SMS login and account recovery.
-- Status view receipts and story progress controls.
+
 - Stickers, polls and location sharing.
 - Richer group permissions such as admin-only posting and join approvals.
 - Blocking/reporting, disappearing messages, scheduled messages or multi-device draft sync.
@@ -57,3 +57,5 @@ The viewer now follows a live-measured 60px toolbar and 100px thumbnail filmstri
 The eleventh browser scenario exercises portrait and landscape corner-positioned context menus, their reaction-strip bounds, actual video upload/playback and the gallery-to-viewer route with multiple media items. Menus now clamp their measured width to the viewport and use an in-flow reaction strip on short landscape screens. Video arrow keys stay with native player controls rather than changing viewer items. Video preview controls stay attached to the intrinsic-aspect-ratio video instead of a stretched flex box. Synthetic portrait/landscape screenshots were inspected; this is local usability coverage, not a real-device or live-video-reference match.
 
 After the local edge/video pass, feature work resumed with parent approval. Multi-admin roles and invitation flows, plus photo/video statuses, now have server permission tests and multi-client browser scenarios. Their synthetic desktop/mobile renderings were inspected. They use the existing app design and are not live-reference-matched screens; no private live account was changed. Dark-reference comparison remains deferred until the user switches their theme.
+
+Status view receipts and timed playback now have permission/idempotency/expiry tests plus browser timing, pause/resume, navigation and author-view checks. The emoji subset has been replaced by the complete pinned Unicode 17 catalog (3,953 local Noto assets), with category/tone/search/insertion tests. Earlier 147-glyph and unavailable-category notes describe superseded checkpoints. Noto glyphs differ from WhatsApp and these added feature screens are local behavior checks, not additional live-reference comparisons.

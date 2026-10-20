@@ -751,3 +751,38 @@ test("admin roles, active invites and protected story media survive a server res
   const media=await fetch(url+`/api/stories/${story.id}/media`,{headers:{Cookie:bob.cookie}});
   assert.equal(media.status,200);assert.deepEqual(Buffer.from(await media.arrayBuffer()),png);
 });
+
+test("status view receipts are idempotent, audience-checked, owner-only and removed with expired statuses", async () => {
+  const author=await register("receiptauthor","Receipt author"),viewer=await register("receiptviewer","Receipt viewer"),outsider=await register("receiptstranger","Receipt stranger");
+  await request("/api/chats",{cookie:author.cookie,method:"POST",body:{kind:"direct",members:[viewer.id]}});
+  await request("/api/stories",{cookie:author.cookie,method:"POST",body:{text:"Receipt fixture"}});
+  const story=(await request("/api/stories",{cookie:author.cookie})).data.stories.find(s=>s.user_id===author.id);
+  const route=`/api/stories/${story.id}`;
+  assert.equal((await request(route+"/view",{cookie:outsider.cookie,method:"POST"})).status,403);
+  assert.equal((await request(route+"/view",{cookie:viewer.cookie,method:"POST"})).status,200);
+  const first=(await request(route+"/views",{cookie:author.cookie})).data.views;
+  assert.equal(first.length,1);assert.equal(first[0].user_id,viewer.id);
+  await request(route+"/view",{cookie:viewer.cookie,method:"POST"});await request(route+"/view",{cookie:author.cookie,method:"POST"});
+  assert.deepEqual((await request(route+"/views",{cookie:author.cookie})).data.views,first);
+  assert.equal((await request(route+"/views",{cookie:viewer.cookie})).status,403);
+  server.db.prepare("UPDATE stories SET expires=0 WHERE id=?").run(story.id);
+  assert.equal((await request(route+"/view",{cookie:viewer.cookie,method:"POST"})).status,404);
+  assert.equal((await request(route+"/views",{cookie:author.cookie})).status,404);
+  await request(route,{cookie:author.cookie,method:"DELETE"});
+  assert.equal(server.db.prepare("SELECT count(*) AS n FROM story_views WHERE story_id=?").get(story.id).n,0);
+});
+
+test("the vendored Unicode 17 emoji catalog has local licensed artwork for every base and skin variant",()=>{
+  const vm=require("node:vm");
+  const source=fs.readFileSync(path.join(__dirname,"../public/emoji-data.js"),"utf8");
+  const catalog=vm.runInNewContext(source+";emojiCatalog");
+  assert.equal(catalog.length,3953);
+  assert.equal(new Set(catalog.map(e=>e.emoji)).size,catalog.length);
+  for(const entry of catalog){
+    assert.match(entry.asset,/^emoji_u[a-f0-9_]+\.svg$/);
+    const svg=fs.readFileSync(path.join(__dirname,"../public/emoji",entry.asset),"utf8");
+    assert.ok(svg.includes("<svg"));
+    assert.doesNotMatch(svg,/<script|<foreignObject|\bon\w+\s*=|(?:href|src)=["']https?:/i);
+  }
+  for(const file of ["Apache-2.0.txt","Noto-APACHE-NOTICE.txt","Flags-LICENSE.txt","Emojibase-LICENSE.txt"])assert.ok(fs.existsSync(path.join(__dirname,"../public/emoji",file)));
+});

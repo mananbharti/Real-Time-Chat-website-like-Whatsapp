@@ -1502,42 +1502,7 @@ async function showStatuses() {
   });
   toolButton(box, "＋ Add a photo or video status", showMediaStatusComposer);
   box.append(el("p", "info-note", "Visible to people who currently share a conversation with you. Text, photo and video statuses expire after 24 hours."));
-  for (const story of result.stories) {
-    toolButton(box, story.name + " · " + clock(story.created_at), () => {
-      const view = showTools(story.name),
-        card = el("div", "story-card story-color-" + story.color, story.text);
-      if (story.media) {
-        card.classList.add("story-media-card");
-        card.replaceChildren();
-        const media=el(story.media.mime.startsWith("video/") ? "video" : "img");
-        media.src=story.media.url;
-        if (media.tagName === "VIDEO") {
-          media.controls=true;
-          media.setAttribute("aria-label","Status video");
-          toolsDialog.addEventListener("close",()=>media.pause(),{once:true});
-        } else media.alt=story.media.filename;
-        card.append(media);
-        if (story.text) card.append(el("p","story-caption",story.text));
-      }
-      view.append(card);
-      view.append(
-        el("p", "info-note", new Date(story.created_at).toLocaleString()),
-      );
-      if (story.user_id === me.id)
-        toolButton(
-          view,
-          "Delete my status",
-          async () => {
-            await api("/api/stories/" + story.id, {
-              method: "DELETE",
-              body: "{}",
-            });
-            await showStatuses();
-          },
-          true,
-        );
-    });
-  }
+  result.stories.forEach((story,index) => toolButton(box,story.name+" · "+clock(story.created_at),()=>openStoryPlayback(result.stories,index)));
   if (!result.stories.length)
     box.append(el("p", "info-note", "No recent status updates."));
 }
@@ -2332,4 +2297,59 @@ function showMediaStatusComposer() {
     if(media.tagName==="VIDEO") {media.controls=true;media.setAttribute("aria-label","Status video preview");} else media.alt="Status photo preview";
     preview.append(media); share.disabled=false;
   });
+}
+
+let storyPlaybackCleanup;
+function stopStoryPlayback() { storyPlaybackCleanup?.(); storyPlaybackCleanup=null; }
+function openStoryPlayback(stories,index) {
+  const story=stories[index]; if (!story) return;
+  const view=showTools(story.name);view.classList.add("story-player");
+  const progress=el("progress","story-progress"); progress.max=1;progress.value=0;progress.setAttribute("aria-label","Status progress");
+  const card=el("div","story-card story-color-"+story.color,story.text);
+  let media;
+  if(story.media) {
+    card.classList.add("story-media-card");card.replaceChildren();
+    media=el(story.media.mime.startsWith("video/")?"video":"img");media.src=story.media.url;
+    if(media.tagName==="VIDEO"){media.controls=true;media.setAttribute("aria-label","Status video");}else media.alt=story.media.filename;
+    card.append(media);if(story.text)card.append(el("p","story-caption",story.text));
+  }
+  const controls=el("div","story-controls");
+  const previous=toolButton(controls,"Previous status",()=>openStoryPlayback(stories,index-1));previous.disabled=index===0;
+  let paused=false,elapsed=0,last=performance.now(),ready=!media;
+  const pause=toolButton(controls,"Pause status",()=>{paused=!paused;pause.textContent=paused?"Resume status":"Pause status";if(media?.tagName==="VIDEO"){if(paused)media.pause();else media.play().catch(()=>{});}});
+  const next=()=>{if(index+1<stories.length)openStoryPlayback(stories,index+1);else toolsDialog.close();};
+  toolButton(controls,"Next status",next);
+  view.append(progress,card,controls,el("p","info-note",new Date(story.created_at).toLocaleString()),el("p","info-note","Opening this status shares a view receipt with its author. Text/photos advance after 5 seconds; videos advance when playback ends."));
+  let recorded=false;
+  const record=()=>{if(recorded)return;recorded=true;api("/api/stories/"+story.id+"/view",{method:"POST",body:"{}"}).catch(e=>toast(e.message));};
+  if(!media)record();
+  else if(media.tagName==="IMG") {media.addEventListener("load",()=>{ready=true;record();});if(media.complete&&media.naturalWidth){ready=true;record();}}
+  else {
+    media.addEventListener("playing",()=>{ready=true;record();});
+    media.addEventListener("ended",next);
+    media.addEventListener("loadedmetadata",()=>media.play().catch(()=>{pause.textContent="Play status";paused=true;}));
+  }
+  if(story.user_id===me.id){
+    toolButton(view,"View status receipts",async()=>{
+      paused=true;media?.pause?.();
+      const result=await api("/api/stories/"+story.id+"/views");
+      const box=showTools("Status views");
+      if(!result.views.length)box.append(el("p","info-note","No views yet."));
+      for(const person of result.views)box.append(el("p","info-note",person.name+" · "+new Date(person.viewed_at).toLocaleString()));
+    });
+    toolButton(view,"Delete my status",async()=>{await api("/api/stories/"+story.id,{method:"DELETE",body:"{}"});await showStatuses();},true);
+  }
+  const frame=()=>{
+    const now=performance.now(),delta=now-last;last=now;
+    if(ready&&!paused&&!document.hidden){
+      if(media?.tagName==="VIDEO")progress.value=Number.isFinite(media.duration)&&media.duration>0?media.currentTime/media.duration:0;
+      else {elapsed+=delta;progress.value=Math.min(1,elapsed/5000);if(elapsed>=5000){next();return;}}
+    }
+    raf=requestAnimationFrame(frame);
+  };
+  let raf=requestAnimationFrame(frame);
+  const key=e=>{if(e.target.tagName==="VIDEO")return;if(e.key==="ArrowRight"){e.preventDefault();next();}if(e.key==="ArrowLeft"&&index>0){e.preventDefault();openStoryPlayback(stories,index-1);}};
+  view.addEventListener("keydown",key);
+  const cleanup=()=>{cancelAnimationFrame(raf);media?.pause?.();view.removeEventListener("keydown",key);view.removeEventListener("close",cleanup);};
+  storyPlaybackCleanup=cleanup;view.addEventListener("close",cleanup,{once:true});
 }

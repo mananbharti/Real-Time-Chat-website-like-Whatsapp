@@ -1917,3 +1917,40 @@ select {
 .status-composer > .tool-row:last-child:disabled {
   opacity: 0.5;
 }
+.story-progress {
+  display: block;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border: 0;
+  margin: 0 0 16px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+.story-progress::-webkit-progress-bar {background:var(--line);}
+.story-progress::-webkit-progress-value {background:var(--green);}
+.story-progress::-moz-progress-bar {background:var(--green);}
+.story-controls {display:flex;gap:8px;justify-content:space-between;}
+.story-controls .tool-row {width:auto;font-size:12px;padding:8px;}
+.story-player .info-note {line-height:18px;margin:10px 0;}
+.emoji-tones {
+  margin: 0 16px 2px;
+  padding: 2px 8px;
+  align-self: flex-end;
+  max-width: calc(100% - 32px);
+  height: 28px;
+  min-height: 28px;
+  font-size: 12px;
+  border-radius: 14px;
+}
+.emoji-grid .emoji-more,
+.emoji-grid .emoji-empty {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: var(--muted);
+}
+.emoji-grid .emoji-more {
+  background: var(--header);
+  margin: 4px 0;
+}

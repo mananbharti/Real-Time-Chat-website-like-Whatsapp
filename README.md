@@ -43,6 +43,8 @@ To try both sides of a conversation, open a second browser profile or an incogni
 | Full-history search        | Shared-media gallery                 | Profile pictures and about lines  |
 | Membership-checked access  | Idempotent message retries           | Text/photo/video statuses (24h) |
 
+The emoji picker includes the complete pinned Unicode 17 catalog: 3,953 local Noto glyphs with categories, keyword search and skin variants. Noto artwork is not WhatsApp artwork.
+
 Messages also support emoji reactions and sender edits within 15 minutes. Group admins can rename groups, add/remove members and promote/demote other admins. The owner stays protected and ownership passes to a remaining admin (or member) when they leave. Invite links expire after 7 days and can be reset or turned off; new members are warned that joining grants access to prior history. Removed members immediately lose access.
 
 **The ticks are real.** One tick means the server stored a message. Gray double ticks mean every other member's client acknowledged delivery. Blue double ticks mean every other member acknowledged reading. Message info shows the recorded delivery/read times.
@@ -103,7 +105,7 @@ npm run test:e2e                  # Browser tests
 npm run test:all                  # Both suites
 ```
 
-The tests use isolated temporary databases. The suite has 18 integration tests and 13 browser scenarios. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, in-app media zoom/navigation, upload quality, persisted composer/media preferences, reconnect, mobile navigation, draft recovery, viewport-edge menus, gallery video controls, statuses, links and shortcuts. CI runs both suites on Node 22.
+The tests use isolated temporary databases. The suite has 20 integration tests and 15 browser scenarios. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, in-app media zoom/navigation, upload quality, persisted composer/media preferences, reconnect, mobile navigation, draft recovery, viewport-edge menus, gallery video controls, statuses, links and shortcuts. CI runs both suites on Node 22.
 
 For a system browser, set `CHROME_PATH` to the Chrome executable. Node 22 may display an experimental warning for its built-in SQLite module.
 
@@ -130,7 +132,7 @@ Double-click a message or swipe right to reply. Right-click or touch-and-hold fo
 
 ## Project status
 
-This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, blocking/reporting, stickers, polls are not implemented. Story view receipts and timed progress are not implemented. Link cards show the URL host/path, not fetched thumbnails or page metadata.
+This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, blocking/reporting, stickers, polls are not implemented. Statuses have author-only view receipts and timed pause/resume playback. Link cards show the URL host/path, not fetched thumbnails or page metadata.
 
 Messages and media are readable by the server operator. The app needs HTTPS, registration/abuse policies, storage limits, retention/backup plans and a security review before public deployment. Use a single server process unless you add a shared Socket.IO adapter and storage. Real-device testing is still needed beyond Chrome's mobile viewport tests.
 

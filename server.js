@@ -90,6 +90,7 @@ function createChatServer(options = {}) {
   db.exec('CREATE TABLE IF NOT EXISTS polls(message_id TEXT PRIMARY KEY REFERENCES messages(id),options TEXT NOT NULL,multiple INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS votes(message_id TEXT NOT NULL REFERENCES messages(id),user_id TEXT NOT NULL REFERENCES users(id),options TEXT NOT NULL,PRIMARY KEY(message_id,user_id))');
   for (const column of ["media_path", "media_mime", "media_name"])
     if (!db.prepare("PRAGMA table_info(stories)").all().some(c => c.name === column)) db.exec(`ALTER TABLE stories ADD COLUMN ${column} TEXT`);
+  db.exec("CREATE TABLE IF NOT EXISTS story_views(story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id),viewed_at TEXT NOT NULL,PRIMARY KEY(story_id,user_id))");
   const app = express();
   if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   const http = createServer(app);
@@ -771,6 +772,21 @@ function createChatServer(options = {}) {
     db.prepare("INSERT INTO stories(id,user_id,text,color,created_at,expires,media_path,media_mime,media_name) VALUES(?,?,?,?,?,?,?,?,?)").run(id,req.user.id,text.trim(),0,createdAt,expires,f.path,type.mime,filename);
     res.status(201).json({id,expires});
   }));
+  const canViewStory = (story,user) => story.user_id===user || !!db.prepare("SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=? LIMIT 1").get(user,story.user_id);
+  app.post("/api/stories/:id/view",auth,(req,res)=>{
+    const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
+    if (!story) return fail(res,404,"Status not found or expired.");
+    if (!canViewStory(story,req.user.id)) return fail(res,403,"This status is not shared with you.");
+    if(story.user_id!==req.user.id) db.prepare("INSERT OR IGNORE INTO story_views(story_id,user_id,viewed_at) VALUES(?,?,?)").run(story.id,req.user.id,new Date().toISOString());
+    res.json({ok:true});
+  });
+  app.get("/api/stories/:id/views",auth,(req,res)=>{
+    const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
+    if(!story) return fail(res,404,"Status not found or expired.");
+    if(story.user_id!==req.user.id) return fail(res,403,"Only the status author can see viewers.");
+    const views=db.prepare("SELECT v.user_id,v.viewed_at,u.name FROM story_views v JOIN users u ON u.id=v.user_id WHERE v.story_id=? ORDER BY v.viewed_at DESC").all(story.id);
+    res.json({views});
+  });
   app.get("/api/stories/:id/media",auth,(req,res) => {
     const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
     if (!story || !story.media_path) return fail(res,404,"Status not found or expired.");
