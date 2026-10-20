@@ -3211,6 +3211,7 @@ function showMainMenu() {
     b.prepend(span);
     return b;
   };
+  if (innerWidth <= 640) item("Status updates", "React", showStatuses);
   item("New group", "Reply", () => {
     toolsDialog.close();
     showContacts();

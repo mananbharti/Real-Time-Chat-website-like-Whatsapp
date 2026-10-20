@@ -947,6 +947,7 @@ test("photo and video statuses preview, share, play, survive refresh and delete 
     .getByRole("button", { name: "Share media for 24 hours", exact: true })
     .click();
   await expect(a.locator("#tools-dialog")).toContainText("Status author");
+  await b.getByRole("button", { name: "Account", exact: true }).click();
   await b.getByRole("button", { name: "Status updates", exact: true }).click();
   await b
     .locator("#tools-dialog")
@@ -979,6 +980,7 @@ test("photo and video statuses preview, share, play, survive refresh and delete 
     .click();
   await b.reload();
   await expect(b.locator("#connection-status")).toHaveText("Connected");
+  await b.getByRole("button", { name: "Account", exact: true }).click();
   await b.getByRole("button", { name: "Status updates", exact: true }).click();
   await b
     .locator("#tools-dialog")
