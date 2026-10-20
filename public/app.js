@@ -986,7 +986,6 @@ $("file-input").addEventListener("change", (e) =>
 const emojis = [
   "😀",
   "😂",
-  "🥹",
   "😊",
   "😍",
   "🥳",
@@ -2213,3 +2212,16 @@ showTools = function(title, point) {
   }
   return panel;
 };
+const picker = $("emoji-picker"), emojiGrid = el("div", "emoji-grid"), emojiTop = el("div", "emoji-top"), emojiSearch = el("input", "emoji-search");
+const emojiButtons = [...picker.querySelectorAll("button")];
+emojiGrid.append(...emojiButtons);
+emojiSearch.placeholder = "Search emoji"; emojiSearch.setAttribute("aria-label", "Search emoji");
+const emojiCategory = el("div", "emoji-category", "Smileys & People");
+const categories = [["Smileys & People", "☻"], ["Animals & Nature", "♧"], ["Food & Drink", "♨"], ["Activity", "⚽"], ["Travel & Places", "♙"], ["Objects", "♧"], ["Symbols", "※"], ["Flags", "⚑"]];
+for (const [label, shape] of categories) {const button=el("button", "emoji-category-button", shape);button.type="button";button.setAttribute("aria-label",label);if(label!=="Smileys & People")button.setAttribute("aria-disabled","true");else button.classList.add("selected");button.addEventListener("click",()=>{if(label!=="Smileys & People")toast("This build includes a limited emoji catalog. More categories are not yet implemented.");else {emojiSearch.value="";emojiSearch.dispatchEvent(new Event("input"));}});emojiTop.append(button);}
+const emojiFooter=el("div","emoji-footer");
+for (const title of ["Emoji", "GIF", "Sticker"]){const button=el("button","",title);button.type="button";if(title!=="Emoji")button.setAttribute("aria-disabled","true");button.addEventListener("click",()=>{if(title!=="Emoji")toast(title+" selection is not yet implemented.");});emojiFooter.append(button);}
+picker.replaceChildren(emojiTop,emojiSearch,emojiCategory,emojiGrid,emojiFooter);
+emojiSearch.addEventListener("input",()=>{const query=emojiSearch.value.trim().toLowerCase();for(const button of emojiButtons){const value=button.getAttribute("aria-label").replace("Insert ","");button.hidden=!!query&&!((emojiSearchNames[value]||"")+value).includes(query);}emojiCategory.textContent=query?"Search results":"Smileys & People";});
+$("emoji-button").addEventListener("click",()=>{if(!picker.hidden)emojiSearch.focus();});
+document.addEventListener("click",e=>{if(!picker.contains(e.target)&&!$("emoji-button").contains(e.target))picker.hidden=true;});

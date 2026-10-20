@@ -17,3 +17,5 @@ The current build uses the public default doodle wallpaper mask from the observe
 Settings are being reworked from a centered modal to the reference sidebar layout. Unsupported capabilities are identified rather than backed by fake success responses. Calls, Channels, Communities and Meta AI rail controls are visual reference surfaces with clear unavailable notices, not implemented services.
 
 Pixel parity is still NOT complete. Sanitized side-by-side images use opaque masks on private reference fields and synthetic local conversations; different message data makes them layout comparisons, not a valid whole-image similarity score. Remaining checks include equivalent message states, every menu and settings subpage, theme/responsive variants, focus/hover transitions and real-device behavior.
+
+The emoji panel's category vectors were also transcribed from the inspected public interface. Emoji artwork comes from the separately licensed Noto distribution, not WhatsApp. The panel comparison is a layout comparison, and does not establish an identical emoji catalog or glyph appearance.
