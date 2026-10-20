@@ -7,11 +7,12 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 - Signup/login, persistent sessions, direct/group messages and authorization.
 - Delivery/read acknowledgements, unread counts and receipt details.
 - Replies, forwarding, stars and deletion rules.
-- Persistent message edits/reactions and group-owner member management.
+- Persistent message edits/reactions, multi-admin roles and protected ownership.
 - Images, recorded voice-note playback and protected attachments.
 - Pin/mute/archive, mobile navigation and server restart recovery.
 - Per-chat draft recovery, links, full-history search and keyboard shortcuts.
-- Text status expiry, profile editing/pictures and shared-media access.
+- Text/photo/video status validation, expiry, audience checks and owner deletion; profile editing/pictures and shared-media access.
+- Expiring/resettable/revocable group invite links with explicit authenticated joining.
 
 ## Implemented, requiring more reference/device checks
 
@@ -25,9 +26,9 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 ## Not implemented
 
 - Calls, end-to-end encryption, phone/SMS login and account recovery.
-- Photo/video stories, status view receipts and story progress controls.
+- Status view receipts and story progress controls.
 - Stickers, polls and location sharing.
-- Multiple-admin roles, group invitation links and richer group permissions.
+- Richer group permissions such as admin-only posting and join approvals.
 - Blocking/reporting, disappearing messages, scheduled messages or multi-device draft sync.
 - Downloaded webpage metadata/thumbnails for rich link previews.
 - Exhaustive authenticated WhatsApp screen/state parity.
@@ -36,7 +37,7 @@ Use synthetic data in documentation. Keep personal reference screens, chat text 
 
 ## Current visual-pass status
 
-The existing-screen parity pass is active; new feature work is paused. Measured and rendered at 1280 x 713: rail 65px; sidebar 511px; chat header 704 x 64px at x=576; composer 680 x 52px at (588,649), 26px radius. These are component measurements, not a claim that all screens are identical.
+The existing-screen parity pass prioritized current surfaces before adding features. The latest local-QA milestone is complete and feature work has resumed, while the remaining live-reference gaps below stay open. Measured and rendered at 1280 x 713: rail 65px; sidebar 511px; chat header 704 x 64px at x=576; composer 680 x 52px at (588,649), 26px radius. These are component measurements, not a claim that all screens are identical.
 
 Inspected comparisons: full chat/list shell with private reference fields masked; same-size composer crops; public-only incoming context menu surfaces; sidebar settings surface with personal reference name/avatar masked. The build now follows the current light reference, not an older dark Web screenshot. Settings still has different available rows, custom filter pills differ from the user's personal folders, menu action coverage differs, independent-app security notices are intentionally accurate, and empty-state artwork is not matched. Calls/Meta AI/Channels/Communities navigation is visibly present but unavailable, with honest notices. Keep that distinction when presenting screenshots.
 
@@ -44,11 +45,15 @@ The New chat drawer now occupies the measured x=65, width=511, full-height sideb
 
 Profile editing and existing Account/Privacy/Chats/shortcut/help subpages now use the sidebar drawer instead of centered popups at the measured desktop viewport. Profile values remain actual editable fields with explicit save; local accounts use usernames, not phone login. The profile comparison retains this difference. Dark-theme regression checks fixed light wallpaper/timestamps/filter/notification overrides; local desktop/mobile screenshots were inspected, but the current live reference remained in light mode and its settings were never changed. Dark screenshots are usability checks, not verified dark-reference matches. The ninth browser suite also checks profile save, theme persistence after refresh and real message send at 390px.
 
-The existing emoji picker now uses the measured 560 x 498 floating panel at x=374, y=125 for the 1280 x 713 fixture, with a 12-column grid and actual name-based filtering. Its 147 licensed Noto glyphs are a subset, not the reference's complete artwork or catalog. Unsupported categories/GIF/stickers remain explicitly unavailable. Tests verify bounds, filtering, all glyphs loading and insertion into the real composer. Message-info now has a tenth inspected, sanitized direct-message comparison: 64px header, 20px-inset 86px wallpaper preview and 72px Read/Delivered rows with actual receipt times. Group info retains individual members and timestamps. Recording and voice preview use floating rounded surfaces and retain actual recording/playback tests, but their equivalent reference states have not been inspected: starting the live microphone was outside the read-only scope. Media viewer, complete settings/menu states and current dark-reference parity remain pending.
+The existing emoji picker now uses the measured 560 x 498 floating panel at x=374, y=125 for the 1280 x 713 fixture, with a 12-column grid and actual name-based filtering. Its 147 licensed Noto glyphs are a subset, not the reference's complete artwork or catalog. Unsupported categories/GIF/stickers remain explicitly unavailable. Tests verify bounds, filtering, all glyphs loading and insertion into the real composer. Message-info now has a tenth inspected, sanitized direct-message comparison: 64px header, 20px-inset 86px wallpaper preview and 72px Read/Delivered rows with actual receipt times. Group info retains individual members and timestamps. Recording and voice preview use floating rounded surfaces and retain actual recording/playback tests, but their equivalent reference states have not been inspected: starting the live microphone was outside the read-only scope. At that checkpoint, media viewer parity remained pending. Complete settings/menu states and current dark-reference parity are still pending.
 
-Chats preferences now uses the measured sidebar header and section/row layout for actual theme and saved-message actions. An eleventh comparison shows the missing reference controls plainly: custom chat themes, media upload quality and auto-download preferences are unavailable, and this app has no corresponding toggle set. Theme changes remain persistent and tested. Existing images still open the protected resource in a new tab rather than an in-app viewer; pending-image uploads still show a filename strip. Those are UI implementation gaps, not finished CSS parity.
+At the eleventh-comparison checkpoint, Chats preferences used the measured sidebar header and section/row layout for actual theme and saved-message actions. An eleventh comparison shows the missing reference controls plainly: custom chat themes, media upload quality and auto-download preferences are unavailable, and this app has no corresponding toggle set. Theme changes remain persistent and tested. Existing images still open the protected resource in a new tab rather than an in-app viewer; pending-image uploads still show a filename strip. Those are UI implementation gaps, not finished CSS parity.
 
 
-The existing media flow now has an in-app protected image/video viewer with loaded-history navigation, zoom, download, keyboard controls and close, plus large pending-image/video previews. These surfaces were inspected with synthetic desktop/mobile media, not an equivalent live-reference media state. Chats now includes functional persisted Enter-is-send, browser spelling and typed-emoticon toggles, still-photo quality selection and Photos/Audio/Videos auto-loading choices. Standard caps large still photos at 1600px; HD preserves originals. Videos/animated files are unchanged and documents remain manual. These implementation semantics are intentionally explicit rather than a claim of identical WhatsApp media processing. The tenth browser suite checks actual behavior. Earlier notes about filename-only previews/new-tab images and missing preference toggles describe the superseded checkpoint.
+The existing media flow now has an in-app protected image/video viewer with loaded-history navigation, zoom, download, keyboard controls and close, plus large pending-image/video previews. The pending previews were inspected with synthetic desktop/mobile media, not an equivalent live-reference upload state. The viewer was later compared as described below. Chats now includes functional persisted Enter-is-send, browser spelling and typed-emoticon toggles, still-photo quality selection and Photos/Audio/Videos auto-loading choices. Standard caps large still photos at 1600px; HD preserves originals. Videos/animated files are unchanged and documents remain manual. These implementation semantics are intentionally explicit rather than a claim of identical WhatsApp media processing. The tenth browser suite checks actual behavior. Earlier notes about filename-only previews/new-tab images and missing preference toggles describe the superseded checkpoint.
 
 The viewer now follows a live-measured 60px toolbar and 100px thumbnail filmstrip. Zoom controls, go-to-message, reply, star, forward, authenticated download, message-menu access and thumbnail navigation use actual behavior. Individual-message pinning is explicitly unavailable. Media from the gallery also opens in-app. Manually loaded media stays loaded during unrelated rerenders for the session. The twelfth comparison is privacy-masked, with differing synthetic aspect ratio/count; current dark reference, upload-preview reference and exhaustive viewer hover/focus/video states remain unverified.
+
+The eleventh browser scenario exercises portrait and landscape corner-positioned context menus, their reaction-strip bounds, actual video upload/playback and the gallery-to-viewer route with multiple media items. Menus now clamp their measured width to the viewport and use an in-flow reaction strip on short landscape screens. Video arrow keys stay with native player controls rather than changing viewer items. Video preview controls stay attached to the intrinsic-aspect-ratio video instead of a stretched flex box. Synthetic portrait/landscape screenshots were inspected; this is local usability coverage, not a real-device or live-video-reference match.
+
+After the local edge/video pass, feature work resumed with parent approval. Multi-admin roles and invitation flows, plus photo/video statuses, now have server permission tests and multi-client browser scenarios. Their synthetic desktop/mobile renderings were inspected. They use the existing app design and are not live-reference-matched screens; no private live account was changed. Dark-reference comparison remains deferred until the user switches their theme.

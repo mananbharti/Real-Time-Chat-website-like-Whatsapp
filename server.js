@@ -88,6 +88,8 @@ function createChatServer(options = {}) {
   );
   if(!db.prepare('PRAGMA table_info(sessions)').all().some(c=>c.name==='locked'))db.exec('ALTER TABLE sessions ADD COLUMN locked INTEGER NOT NULL DEFAULT 0');
   db.exec('CREATE TABLE IF NOT EXISTS polls(message_id TEXT PRIMARY KEY REFERENCES messages(id),options TEXT NOT NULL,multiple INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS votes(message_id TEXT NOT NULL REFERENCES messages(id),user_id TEXT NOT NULL REFERENCES users(id),options TEXT NOT NULL,PRIMARY KEY(message_id,user_id))');
+  for (const column of ["media_path", "media_mime", "media_name"])
+    if (!db.prepare("PRAGMA table_info(stories)").all().some(c => c.name === column)) db.exec(`ALTER TABLE stories ADD COLUMN ${column} TEXT`);
   const app = express();
   if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   const http = createServer(app);
@@ -134,6 +136,9 @@ function createChatServer(options = {}) {
     db.prepare("DELETE FROM sessions WHERE expires<?").run(now);
     for (const s of io.sockets.sockets.values())
       if (s.data.expires <= now) s.disconnect(true);
+    for (const story of db.prepare("SELECT media_path FROM stories WHERE expires<=?").all(now))
+      if (story.media_path) fs.rmSync(story.media_path, {force:true});
+    db.prepare("DELETE FROM stories WHERE expires<=?").run(now);
   }, 60000);
   cleanup.unref();
   app.disable("x-powered-by");
@@ -731,7 +736,7 @@ function createChatServer(options = {}) {
         "SELECT s.*,u.name FROM stories s JOIN users u ON u.id=s.user_id WHERE s.expires>? AND (s.user_id=? OR s.user_id IN (SELECT b.user_id FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=?)) ORDER BY s.created_at DESC LIMIT 100",
       )
       .all(Date.now(), req.user.id, req.user.id);
-    res.json({ stories: rows });
+    res.json({ stories: rows.map(({media_path,media_mime,media_name,...row}) => ({...row, media: media_path ? {mime:media_mime,filename:media_name,url:"/api/stories/"+row.id+"/media"} : null})) });
   });
   app.post("/api/stories", auth, (req, res) => {
     const { text, color } = req.body || {};
@@ -739,7 +744,7 @@ function createChatServer(options = {}) {
       return fail(res, 400, "Use 1-500 characters for a text status.");
     if (!allowed(`story:${req.user.id}`, 10, 3600000))
       return fail(res, 429, "Too many status updates. Try again later.");
-    db.prepare("INSERT INTO stories VALUES(?,?,?,?,?,?)").run(
+    db.prepare("INSERT INTO stories(id,user_id,text,color,created_at,expires) VALUES(?,?,?,?,?,?)").run(
       randomUUID(),
       req.user.id,
       text.trim(),
@@ -749,11 +754,35 @@ function createChatServer(options = {}) {
     );
     res.json({ ok: true });
   });
+  const storyUpload=multer({dest:path.join(dataDir,"uploads"),limits:{fileSize:25*1024*1024,files:1,fields:1,fieldSize:2000}});
+  app.post("/api/stories/media",auth,(req,res,next) => {
+    if (!allowed(`story:${req.user.id}`,10,3600000)) return fail(res,429,"Too many status updates. Try again later.");
+    storyUpload.single("file")(req,res,next);
+  },asyncRoute(async (req,res) => {
+    const f=req.file; if (!f) return fail(res,400,"Choose a photo or video.");
+    const discard=(message) => {fs.rmSync(f.path,{force:true}); return fail(res,400,message);};
+    const text=req.body?.text || "";
+    if (typeof text!=="string" || text.length>500) return discard("Use a caption up to 500 characters.");
+    const {fileTypeFromFile}=await import("file-type");
+    let type; try {type=await fileTypeFromFile(f.path);} catch {}
+    if (!type || !["image/png","image/jpeg","image/gif","image/webp","video/mp4","video/webm","video/ogg"].includes(type.mime)) return discard("Choose a PNG, JPEG, GIF, WebP, MP4, WebM or OGG photo/video.");
+    const id=randomUUID(),createdAt=new Date().toISOString(),expires=Date.now()+86400000;
+    const filename=path.basename(f.originalname).replace(/[\u0000-\u001f\u007f]/g,"").slice(0,120)||"status";
+    db.prepare("INSERT INTO stories(id,user_id,text,color,created_at,expires,media_path,media_mime,media_name) VALUES(?,?,?,?,?,?,?,?,?)").run(id,req.user.id,text.trim(),0,createdAt,expires,f.path,type.mime,filename);
+    res.status(201).json({id,expires});
+  }));
+  app.get("/api/stories/:id/media",auth,(req,res) => {
+    const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
+    if (!story || !story.media_path) return fail(res,404,"Status not found or expired.");
+    const shares=story.user_id===req.user.id || db.prepare("SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=? LIMIT 1").get(req.user.id,story.user_id);
+    if (!shares) return fail(res,403,"This status is not shared with you.");
+    res.type(story.media_mime); res.sendFile(story.media_path);
+  });
   app.delete("/api/stories/:id", auth, (req, res) => {
-    db.prepare("DELETE FROM stories WHERE id=? AND user_id=?").run(
-      req.params.id,
-      req.user.id,
-    );
+    const story=db.prepare("SELECT * FROM stories WHERE id=? AND user_id=?").get(req.params.id,req.user.id);
+    if (!story) return fail(res,404,"Status not found.");
+    if (story.media_path) fs.rmSync(story.media_path,{force:true});
+    db.prepare("DELETE FROM stories WHERE id=? AND user_id=?").run(req.params.id,req.user.id);
     res.json({ ok: true });
   });
 

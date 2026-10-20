@@ -50,7 +50,7 @@ Optional environment variables:
 ### Profile and interface
 
 - Editable display name/about and upload/remove a PNG, JPEG or WebP profile picture up to 2 MB.
-- Text statuses shared with people who have a conversation with you; hidden after 24 hours, with owner deletion. **Photo/video stories and story-view receipts are not implemented.**
+- Text/photo/video statuses shared with people who currently share a conversation with you. Photos/videos use checked file signatures, captions up to 500 characters and a 25 MB file limit. Each media read checks current audience and 24-hour expiry. Owners can delete; expired rows/files are purged by the minute cleanup timer while the server runs. Existing downloaded copies cannot be revoked. Story-view receipts and timed progress are not implemented.
 - Dark/light theme, responsive chat-list/conversation navigation and opt-in desktop notifications. Muting suppresses background-chat notifications in this app.
 - Keyboard shortcuts: `Ctrl/Cmd+K` for chat search, `Ctrl/Cmd+Shift+F` for message search, `Ctrl/Cmd+Alt+N` for a new chat, `Escape` to dismiss overlays/replies/search, `Enter` to send by default, `Shift+Enter` for a new line. With Enter-is-send off, Enter inserts a new line and Ctrl/Cmd+Enter sends.
 
@@ -63,17 +63,17 @@ npm run test:e2e
 npm run test:all
 ```
 
-To use an existing browser, set `CHROME_PATH` to its executable when running browser tests. CI uses Node 22, installs Chromium, and runs both suites. Integration tests use a temporary database; browser tests start an isolated server on port 3100 with a temporary data directory. The browser launch uses fake microphone input only in tests.
+To use an existing browser, set `CHROME_PATH` to its executable when running browser tests. CI uses Node 22, installs Chromium, and runs both suites. Integration tests use a temporary database; each browser scenario starts its own server on a random localhost port with a temporary data directory. The browser launch uses fake microphone input only in tests.
 
 Tests exercise authentication, direct/group membership, real socket delivery, read receipts, malformed messages, upload validation, private media access, profile pictures, history search, forwarding/deletion/stars, preferences, status expiry and a real server restart. Multi-client browser checks exercise messaging, quote replies, HTML-injection prevention, image loading, recorded audio playback, mobile navigation, reconnect, draft recovery, menus, statuses, profile editing, links and shortcuts.
 
 ## Limits and deployment notes
 
-This is a working development build, **not an exhaustive reverse-engineered WhatsApp implementation or a production-security certification**. Calls, end-to-end encryption, phone-number login/SMS, account recovery, push notifications when the app is closed, multiple-admin roles and invitation links, blocking/reporting, polls, stickers, location sharing and photo/video statuses are not implemented. Contacts are registered app accounts, not your phone address book. Long-press/swipe behavior and recording need real-device regression testing beyond desktop Chrome's mobile viewport tests.
+This is a working development build, **not an exhaustive reverse-engineered WhatsApp implementation or a production-security certification**. Calls, end-to-end encryption, phone-number login/SMS, account recovery, push notifications when the app is closed, blocking/reporting, polls, stickers, location sharing are not implemented. Contacts are registered app accounts, not your phone address book. Long-press/swipe behavior and recording need real-device regression testing beyond desktop Chrome's mobile viewport tests.
 
 Use a single Node process: online presence and basic rate-limit buckets are in memory. A multi-instance deployment needs a shared Socket.IO adapter, shared limits and shared storage. Sessions/messages/media persist across restarts; presence does not. Passwords are hashed, but message/media contents are stored unencrypted on the server. Authorized server operators can read them.
 
-Registration/login attempts are limited by the connecting IP. Messages, uploads and chat creation have basic per-user limits. This does not replace production abuse controls, invite/registration policies, storage quotas, backups, malware scanning or a security review. Uploads are not garbage-collected, and expired statuses are hidden rather than automatically purged. Keep `data/` private, use HTTPS, choose trusted proxy settings correctly, and arrange retention/backups before public deployment.
+Registration/login attempts are limited by the connecting IP. Messages, uploads and chat creation have basic per-user limits. This does not replace production abuse controls, invite/registration policies, storage quotas, backups, malware scanning or a security review. Chat uploads are not garbage-collected. Expired status media is purged by the cleanup timer while the server runs. Keep `data/` private, use HTTPS, choose trusted proxy settings correctly, and arrange retention/backups before public deployment.
 
 A failed upload must be selected or recorded again. Temporary offline text drafts are kept; the app does not queue sends automatically. A server acknowledgement is not a human read receipt. Notifications require a browser grant and do not run after the site is closed.
 
@@ -88,3 +88,9 @@ The user subsequently authorized linking WhatsApp Web for read-only reference in
 If you reuse this code, please link back to [mananbharti](https://github.com/mananbharti).
 
 **Manan Bharti** ([@mananbharti](https://github.com/mananbharti))
+
+## Group administration and invitations
+
+Group members have member/admin roles, migrated without resetting existing roles. Owners remain admins and cannot be removed or demoted by others. Admins can rename, add/remove members and promote/demote other admins. Owner departure selects an existing admin first and makes the successor an admin. Removing a member immediately revokes protected history/media reads.
+
+Invite links use 256-bit random tokens, only their SHA-256 hashes are stored. One link is active per group, for 7 days. Creating a new one replaces the old one; admins can turn it off. Authenticated invite previews reveal only group name, member count, expiry and whether the viewer has joined, never history or member profiles. Explicit Join grants ordinary membership and full prior history, with a 50-member cap and rate limits. Removed people can rejoin through a still-active link, so reset or turn off links when needed. The interface copies links for you to share; it does not send them to other people.

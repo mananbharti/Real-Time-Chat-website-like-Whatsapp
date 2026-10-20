@@ -41,9 +41,9 @@ To try both sides of a conversation, open a second browser profile or an incogni
 | Online and last seen       | Delete for yourself or everyone      | Pin, mute and archive             |
 | Typing and unread counts   | Emoji and safe clickable links       | Right-click and touch menus       |
 | Full-history search        | Shared-media gallery                 | Profile pictures and about lines  |
-| Membership-checked access  | Idempotent message retries           | Text statuses with 24-hour expiry |
+| Membership-checked access  | Idempotent message retries           | Text/photo/video statuses (24h) |
 
-Messages also support emoji reactions and sender edits within 15 minutes. Group owners can rename groups, add/remove members and leave, with ownership passed to a remaining member. Removed members immediately lose access.
+Messages also support emoji reactions and sender edits within 15 minutes. Group admins can rename groups, add/remove members and promote/demote other admins. The owner stays protected and ownership passes to a remaining admin (or member) when they leave. Invite links expire after 7 days and can be reset or turned off; new members are warned that joining grants access to prior history. Removed members immediately lose access.
 
 **The ticks are real.** One tick means the server stored a message. Gray double ticks mean every other member's client acknowledged delivery. Blue double ticks mean every other member acknowledged reading. Message info shows the recorded delivery/read times.
 
@@ -61,6 +61,14 @@ These captures are from the running app with local test accounts, not static moc
 <tr>
 <td><img src="docs/screenshots/mobile.png" alt="Mobile group conversation with replies and blue read ticks" width="310"></td>
 <td><img src="docs/screenshots/mobile-list.png" alt="Mobile chat list with search, filters and recent messages" width="310"></td>
+</tr>
+<tr>
+<td align="center"><strong>Photo and video statuses</strong></td>
+<td align="center"><strong>Group administration</strong></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/status-media.png" alt="A synthetic lake photo status with a caption" width="310"></td>
+<td><img src="docs/screenshots/group-roles.png" alt="Group owner and second admin with real role controls" width="310"></td>
 </tr>
 </table>
 
@@ -95,7 +103,7 @@ npm run test:e2e                  # Browser tests
 npm run test:all                  # Both suites
 ```
 
-The tests use isolated temporary databases. The suite has 15 integration tests and 10 browser scenarios. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, in-app media zoom/navigation, upload quality, persisted composer/media preferences, reconnect, mobile navigation, draft recovery, menus, statuses, links and shortcuts. CI runs both suites on Node 22.
+The tests use isolated temporary databases. The suite has 18 integration tests and 13 browser scenarios. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, in-app media zoom/navigation, upload quality, persisted composer/media preferences, reconnect, mobile navigation, draft recovery, viewport-edge menus, gallery video controls, statuses, links and shortcuts. CI runs both suites on Node 22.
 
 For a system browser, set `CHROME_PATH` to the Chrome executable. Node 22 may display an experimental warning for its built-in SQLite module.
 
@@ -122,7 +130,7 @@ Double-click a message or swipe right to reply. Right-click or touch-and-hold fo
 
 ## Project status
 
-This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, multiple-admin roles and group invitation links, blocking/reporting, stickers, polls and photo/video stories are not implemented. Statuses are text-only. Link cards show the URL host/path, not fetched thumbnails or page metadata.
+This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, blocking/reporting, stickers, polls are not implemented. Story view receipts and timed progress are not implemented. Link cards show the URL host/path, not fetched thumbnails or page metadata.
 
 Messages and media are readable by the server operator. The app needs HTTPS, registration/abuse policies, storage limits, retention/backup plans and a security review before public deployment. Use a single server process unless you add a shared Socket.IO adapter and storage. Real-device testing is still needed beyond Chrome's mobile viewport tests.
 

@@ -582,6 +582,11 @@ async function start(user) {
   $("app").hidden = false;
   $("self-avatar").textContent = me.name.slice(0, 2).toUpperCase();
   await refreshChats();
+  const invite = new URL(location.href).searchParams.get("invite");
+  if (invite) {
+    history.replaceState(null, "", location.pathname);
+    await showGroupInvite(invite);
+  }
   socket?.disconnect();
   socket = io();
   socket.on("connect", async () => {
@@ -1242,6 +1247,7 @@ const toolsDialog = el("dialog");
 toolsDialog.id = "tools-dialog";
 document.body.append(toolsDialog);
 function showTools(title, point) {
+  toolsDialog.querySelectorAll("video,audio").forEach(media=>media.pause());
   toolsDialog.replaceChildren();
   toolsDialog.classList.toggle("context-tools", !!point);
   if (point) {
@@ -1494,17 +1500,25 @@ async function showStatuses() {
       await showStatuses();
     });
   });
-  box.append(
-    el(
-      "p",
-      "info-note",
-      "Visible to people who share a conversation with you. Text statuses expire after 24 hours.",
-    ),
-  );
+  toolButton(box, "＋ Add a photo or video status", showMediaStatusComposer);
+  box.append(el("p", "info-note", "Visible to people who currently share a conversation with you. Text, photo and video statuses expire after 24 hours."));
   for (const story of result.stories) {
     toolButton(box, story.name + " · " + clock(story.created_at), () => {
       const view = showTools(story.name),
         card = el("div", "story-card story-color-" + story.color, story.text);
+      if (story.media) {
+        card.classList.add("story-media-card");
+        card.replaceChildren();
+        const media=el(story.media.mime.startsWith("video/") ? "video" : "img");
+        media.src=story.media.url;
+        if (media.tagName === "VIDEO") {
+          media.controls=true;
+          media.setAttribute("aria-label","Status video");
+          toolsDialog.addEventListener("close",()=>media.pause(),{once:true});
+        } else media.alt=story.media.filename;
+        card.append(media);
+        if (story.text) card.append(el("p","story-caption",story.text));
+      }
       view.append(card);
       view.append(
         el("p", "info-note", new Date(story.created_at).toLocaleString()),
@@ -1969,7 +1983,9 @@ groupTools.addEventListener("click", () => {
   box.append(
     el("p", "info-note", chat.name + " · " + chat.members.length + " members"),
   );
-  if (chat.ownerId === me.id) {
+  const isAdmin = chat.members.some(u => u.id === me.id && u.role === "admin");
+  if (isAdmin) {
+    toolButton(box, "Invite via link", () => showInviteManager(chat));
     toolButton(box, "Rename group", () => {
       const form = showTools("Rename group"),
         input = el("input");
@@ -2011,9 +2027,23 @@ groupTools.addEventListener("click", () => {
     const row = el("div", "info-member");
     row.append(
       userAvatar(user),
-      el("span", "", user.name + (user.id === chat.ownerId ? " · owner" : "")),
+      el("span", "", user.name + (user.id === chat.ownerId ? " · owner" : user.role === "admin" ? " · admin" : "")),
     );
-    if (chat.ownerId === me.id && user.id !== me.id) {
+    if (isAdmin && user.id !== chat.ownerId) {
+      const role = el("button", "member-role", user.role === "admin" ? "Dismiss admin" : "Make admin");
+      role.type = "button";
+      role.setAttribute("aria-label", (user.role === "admin" ? "Dismiss admin " : "Make admin ") + user.name);
+      role.addEventListener("click", async () => {
+        if (!confirm((user.role === "admin" ? "Remove admin rights from " : "Give admin rights to ") + user.name + "?")) return;
+        try {
+          await api(`/api/chats/${chat.id}/members/${user.id}/role`, {method:"PATCH",body:JSON.stringify({role:user.role === "admin" ? "member" : "admin"})});
+          await refreshChats();
+          groupTools.click();
+        } catch (e) { toast(e.message); }
+      });
+      row.append(role);
+    }
+    if (isAdmin && user.id !== me.id && user.id !== chat.ownerId) {
       const button = el("button", "remove-member", "Remove");
       button.type = "button";
       button.setAttribute("aria-label", "Remove " + user.name);
@@ -2226,3 +2256,80 @@ picker.replaceChildren(emojiTop,emojiSearch,emojiCategory,emojiGrid,emojiFooter)
 emojiSearch.addEventListener("input",()=>{const query=emojiSearch.value.trim().toLowerCase();for(const button of emojiButtons){const value=button.getAttribute("aria-label").replace("Insert ","");button.hidden=!!query&&!((emojiSearchNames[value]||"")+value).includes(query);}emojiCategory.textContent=query?"Search results":"Smileys & People";});
 $("emoji-button").addEventListener("click",()=>{if(!picker.hidden)emojiSearch.focus();});
 document.addEventListener("click",e=>{if(!picker.contains(e.target)&&!$("emoji-button").contains(e.target))picker.hidden=true;});
+
+function showInviteManager(chat) {
+  const box = showTools("Invite via link");
+  box.append(el("p", "info-note", "Anyone with a current link and an app account can join and see the entire group history. Links expire after 7 days. Creating a new link turns off the old one. Removing a member does not stop them rejoining through a current link; turn off or reset the link too."));
+  const output=el("div","invite-output");
+  const generate=toolButton(box, "Create new invite link", async () => {
+    generate.disabled=true;
+    try {
+    const result = await api(`/api/chats/${chat.id}/invite`, {method:"POST",body:"{}"});
+    const link = new URL(location.pathname, location.origin);
+    link.searchParams.set("invite",result.token);
+    const field = el("input", "invite-link");
+    field.readOnly = true;
+    field.value = link.href;
+    field.setAttribute("aria-label","Group invite link");
+    box.querySelector(".invite-link")?.remove();
+    box.append(field,el("p","info-note","Expires " + new Date(result.expires).toLocaleString()));
+    field.focus(); field.select();
+    toolButton(box,"Copy invite link",async () => { await navigator.clipboard.writeText(link.href); toast("Invite link copied."); });
+  });
+  toolButton(box, "Turn off invite link", async () => {
+    await api(`/api/chats/${chat.id}/invite`, {method:"DELETE",body:"{}"});
+    toolsDialog.close(); toast("Invite link turned off.");
+  },true);
+  box.append(output);
+}
+async function showGroupInvite(token) {
+  try {
+    const result = await api(`/api/invites/${encodeURIComponent(token)}`);
+    const box = showTools("Group invitation");
+    box.append(el("h3","",result.group.name), el("p","info-note", result.group.memberCount + " members. Joining gives you access to the entire group history and shares your app profile with its members."));
+    toolButton(box,result.group.joined ? "Open group" : "Join group", async () => {
+      const result = await api(`/api/invites/${encodeURIComponent(token)}/join`,{method:"POST",body:"{}"});
+      await refreshChats(); toolsDialog.close(); await openChat(result.chat.id);
+    });
+  } catch (e) { toast(e.message); }
+}
+
+function showMediaStatusComposer() {
+  const box=showTools("New photo or video status");
+  const input=el("input");
+  input.type="file";
+  input.accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/ogg";
+  input.setAttribute("aria-label","Status photo or video");
+  const preview=el("div","status-media-preview");
+  const caption=el("textarea","status-input");
+  caption.maxLength=500;
+  caption.placeholder="Add a caption...";
+  caption.setAttribute("aria-label","Status caption");
+  box.append(el("p","info-note","Shared for 24 hours with people who currently share a conversation with you. Up to 25 MB. Video playback depends on the file's codec and your browser."),input,preview,caption);
+  let file,objectURL;
+  const clear=()=>{ if(objectURL) URL.revokeObjectURL(objectURL); objectURL=null; preview.querySelector("video")?.pause(); };
+  toolsDialog.addEventListener("close",clear,{once:true});
+  const share=toolButton(box,"Share media for 24 hours",async()=>{
+    if (!file) return;
+    share.disabled=true;
+    input.disabled=true;
+    try {
+      const body=new FormData(); body.append("file",file); body.append("text",caption.value);
+      await api("/api/stories/media",{method:"POST",body});
+      clear(); await showStatuses();
+    } finally { share.disabled=!file; input.disabled=false; }
+  });
+  share.disabled=true;
+  input.addEventListener("change",()=>{
+    clear(); preview.replaceChildren(); file=input.files[0];
+    if (!file) {share.disabled=true;return;}
+    if (file.size>25*1024*1024 || !/^(image|video)\//.test(file.type)) {
+      file=null; share.disabled=true; toast("Choose a photo or video up to 25 MB."); return;
+    }
+    objectURL=URL.createObjectURL(file);
+    const media=el(file.type.startsWith("video/")?"video":"img");
+    media.src=objectURL;
+    if(media.tagName==="VIDEO") {media.controls=true;media.setAttribute("aria-label","Status video preview");} else media.alt="Status photo preview";
+    preview.append(media); share.disabled=false;
+  });
+}

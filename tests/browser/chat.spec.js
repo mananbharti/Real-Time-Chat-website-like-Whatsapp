@@ -1,5 +1,17 @@
-const { test, expect } = require("@playwright/test");
+const { test: base, expect } = require("@playwright/test");
 const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const {createChatServer} = require("../../server");
+const test = base.extend({
+  baseURL: async ({}, use) => {
+    const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),"chat-browser-case-"));
+    const server=createChatServer({dataDir});
+    await new Promise(resolve=>server.http.listen(0,"127.0.0.1",resolve));
+    try { await use(`http://127.0.0.1:${server.http.address().port}`); }
+    finally { await server.close(); fs.rmSync(dataDir,{recursive:true,force:true}); }
+  }
+});
 const stamp = () =>
   Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 async function register(page, name, handle) {
@@ -500,4 +512,144 @@ test("media preview/viewer and persistent chat preferences change actual compose
  await a.locator("#file-input").setInputFiles({name:"wide-photo-hd.png",mimeType:"image/png",buffer:Buffer.from(photo,"base64")});await expect(a.locator(".pending-media")).toBeVisible();expect(await a.locator(".pending-media").evaluate(i=>i.naturalWidth)).toBe(2400);await a.getByRole("button",{name:"Remove attachment",exact:true}).click();await expect(a.locator("#attachment-preview")).not.toBeVisible();
  await a.setViewportSize({width:390,height:844});await a.locator(".attachment-image").first().click();await expect(a.locator(".media-viewer")).toBeVisible();expect(await a.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await a.getByRole("button",{name:"Close media viewer",exact:true}).click();
  await context.close();await other.close();
+});
+
+test("edge menus remain on-screen and gallery videos preserve native keyboard controls", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const other = await browser.newContext();
+  const a = await context.newPage(), b = await other.newPage();
+  await register(a, "Edge tester", "edge_" + stamp());
+  await register(b, "Edge friend", "edgefriend_" + stamp());
+  await direct(a, "Edge friend");
+  await send(a, "Synthetic menu fixture");
+  for (const viewport of [{width:390,height:844}, {width:844,height:390}]) {
+    await a.setViewportSize(viewport);
+    for (const point of [{clientX:1,clientY:1}, {clientX:viewport.width - 1,clientY:viewport.height - 1}]) {
+      await a.locator(".message").evaluate((node, init) => node.dispatchEvent(new MouseEvent("contextmenu", { ...init, bubbles: true, cancelable: true })), point);
+      const bounds = await a.locator("#tools-dialog").boundingBox();
+      const reactions = await a.locator(".reaction-picker").boundingBox();
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+      expect(reactions.x).toBeGreaterThanOrEqual(0);
+      expect(reactions.x + reactions.width).toBeLessThanOrEqual(viewport.width);
+      expect(reactions.y).toBeGreaterThanOrEqual(0);
+      await a.screenshot({path:testInfo.outputPath(`menu-edge-${viewport.width}-${point.clientX}.png`)});
+      await a.keyboard.press("Escape");
+    }
+  }
+  await a.setViewportSize({width:390,height:844});
+  await a.locator("#file-input").setInputFiles({
+    name: "one-pixel.png", mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf4UAAAAASUVORK5CYII=", "base64")
+  });
+  await expect(a.locator("img.pending-media")).toBeVisible();
+  await a.getByRole("button", {name:"Send message",exact:true}).click();
+  await expect(a.locator(".attachment-image")).toBeVisible();
+  await a.locator("#file-input").setInputFiles("tests/fixtures/solid-teal.webm");
+  await expect(a.locator("video.pending-media")).toBeVisible();
+  await expect(a.locator("video.pending-media")).toHaveJSProperty("readyState", 4);
+  await a.screenshot({path:testInfo.outputPath("video-preview-mobile.png")});
+  await a.getByRole("button", {name:"Send message",exact:true}).click();
+  await a.getByRole("button", {name:"Media gallery",exact:true}).click();
+  await a.locator(".gallery-item").filter({hasText:"solid-teal.webm"}).click();
+  await expect(a.locator(".media-viewer video")).toBeVisible();
+  await expect(a.getByRole("button",{name:"Zoom in",exact:true})).toBeDisabled();
+  const current = await a.locator(".media-viewer footer .sr-only").textContent();
+  await a.locator(".media-viewer video").focus();
+  await a.locator(".media-viewer video").press("ArrowRight");
+  await expect(a.locator(".media-viewer footer .sr-only")).toHaveText(current);
+  await expect(a.locator(".viewer-thumbnail")).toHaveCount(2);
+  await a.screenshot({path:testInfo.outputPath("video-viewer-mobile.png")});
+  await a.keyboard.press("Escape");
+  await expect(a.locator(".media-viewer")).toHaveCount(0);
+  await context.close();
+  await other.close();
+});
+
+test("admin promotion and account-bound invite acceptance update actual group membership", async ({browser}, testInfo) => {
+  const contexts = await Promise.all([browser.newContext(),browser.newContext(),browser.newContext()]);
+  const [a,b,c] = await Promise.all(contexts.map(x=>x.newPage()));
+  await register(a,"Group owner","go_"+stamp());
+  await register(b,"Second admin","ga_"+stamp());
+  await register(c,"Invite guest","gg_"+stamp());
+  await a.getByRole("button",{name:"New chat",exact:true}).click();
+  await a.getByRole("button",{name:"New group",exact:true}).click();
+  await a.getByLabel("Group name",{exact:true}).fill("Weekend studio");
+  await a.locator(".contact").filter({hasText:"Second admin"}).click();
+  await a.getByRole("button",{name:"Create group",exact:true}).click();
+  await openFromList(a,"Weekend studio");
+  async function manage(page) {
+    await page.getByRole("button",{name:"Conversation info",exact:true}).click();
+    await page.getByRole("button",{name:"Manage group",exact:true}).click();
+  }
+  await manage(a);
+  a.once("dialog",d=>d.accept());
+  await a.getByRole("button",{name:"Make admin Second admin",exact:true}).click();
+  await expect(a.locator("#tools-dialog")).toContainText("Second admin · admin");
+  await a.screenshot({path:testInfo.outputPath("group-roles-desktop.png")});
+  await a.keyboard.press("Escape");
+  await openFromList(b,"Weekend studio");
+  await manage(b);
+  await expect(b.getByRole("button",{name:"Rename group",exact:true})).toBeVisible();
+  await expect(b.getByRole("button",{name:"Remove Group owner",exact:true})).toHaveCount(0);
+  await b.getByRole("button",{name:"Invite via link",exact:true}).click();
+  await b.getByRole("button",{name:"Create new invite link",exact:true}).click();
+  const link=await b.getByLabel("Group invite link",{exact:true}).inputValue();
+  await b.screenshot({path:testInfo.outputPath("group-invite-desktop.png")});
+  await c.setViewportSize({width:390,height:844});
+  await c.goto(link);
+  await expect(c.locator("#tools-dialog")).toContainText("Weekend studio");
+  await expect(c.locator("#tools-dialog")).toContainText("entire group history");
+  await c.screenshot({path:testInfo.outputPath("group-join-mobile.png")});
+  await c.getByRole("button",{name:"Join group",exact:true}).click();
+  await expect(c.locator("#chat-title")).toHaveText("Weekend studio");
+  await send(c,"Joined through the real invite flow");
+  await expect(a.locator(".message-text")).toHaveText("Joined through the real invite flow");
+  await b.getByRole("button",{name:"Turn off invite link",exact:true}).click();
+  await c.goto(link);
+  await expect(c.locator("#toast")).toContainText("invalid or expired");
+  await Promise.all(contexts.map(x=>x.close()));
+});
+
+test("photo and video statuses preview, share, play, survive refresh and delete for the current audience", async ({browser}, testInfo) => {
+  const contexts=await Promise.all([browser.newContext({viewport:{width:1280,height:713}}),browser.newContext({viewport:{width:390,height:844}})]);
+  const [a,b]=await Promise.all(contexts.map(x=>x.newPage()));
+  await register(a,"Status author","sa_"+stamp());
+  await register(b,"Status friend","sf_"+stamp());
+  await direct(a,"Status friend");
+  const photo=await a.evaluate(()=>{
+    const c=document.createElement("canvas"); c.width=640;c.height=480;const x=c.getContext("2d");
+    x.fillStyle="#c5e6e4";x.fillRect(0,0,640,480);x.fillStyle="#3d8b80";x.beginPath();x.moveTo(0,280);x.lineTo(180,100);x.lineTo(360,290);x.lineTo(500,150);x.lineTo(640,300);x.lineTo(640,480);x.lineTo(0,480);x.fill();x.fillStyle="#76bfc0";x.fillRect(0,300,640,180);x.fillStyle="#fff6b4";x.beginPath();x.arc(520,75,35,0,Math.PI*2);x.fill();x.font="30px sans-serif";x.fillStyle="#fff";x.fillText("Weekend by the lake",35,425);return c.toDataURL("image/png").split(",")[1];
+  });
+  await a.getByRole("button",{name:"Status updates",exact:true}).click();
+  await a.getByRole("button",{name:"＋ Add a photo or video status",exact:true}).click();
+  await expect(a.getByRole("button",{name:"Share media for 24 hours",exact:true})).toBeDisabled();
+  await a.getByLabel("Status photo or video",{exact:true}).setInputFiles({name:"lake.png",mimeType:"image/png",buffer:Buffer.from(photo,"base64")});
+  await expect(a.getByRole("img",{name:"Status photo preview",exact:true})).toBeVisible();
+  await a.getByLabel("Status caption",{exact:true}).fill("A little pause by the water.");
+  await a.screenshot({path:testInfo.outputPath("photo-status-compose.png")});
+  await a.getByRole("button",{name:"Share media for 24 hours",exact:true}).click();
+  await expect(a.locator("#tools-dialog")).toContainText("Status author");
+  await b.getByRole("button",{name:"Status updates",exact:true}).click();
+  await b.locator("#tools-dialog").getByRole("button",{name:/^Status author ·/}).click();
+  await expect(b.locator(".story-media-card img")).toBeVisible();
+  await expect(b.locator(".story-caption")).toHaveText("A little pause by the water.");
+  await b.screenshot({path:testInfo.outputPath("photo-status-view-mobile.png")});
+  await a.getByRole("button",{name:"＋ Add a photo or video status",exact:true}).click();
+  await a.getByLabel("Status photo or video",{exact:true}).setInputFiles("tests/fixtures/solid-teal.webm");
+  await expect(a.getByLabel("Status video preview",{exact:true})).toBeVisible();
+  await a.getByLabel("Status caption",{exact:true}).fill("A short synthetic video");
+  await a.getByRole("button",{name:"Share media for 24 hours",exact:true}).click();
+  await b.reload();
+  await expect(b.locator("#connection-status")).toHaveText("Connected");
+  await b.getByRole("button",{name:"Status updates",exact:true}).click();
+  await b.locator("#tools-dialog").getByRole("button",{name:/^Status author ·/}).first().click();
+  await b.getByLabel("Status video",{exact:true}).evaluate(v=>v.play());
+  await expect.poll(()=>b.getByLabel("Status video",{exact:true}).evaluate(v=>v.currentTime)).toBeGreaterThan(0);
+  await b.screenshot({path:testInfo.outputPath("video-status-view-mobile.png")});
+  await a.locator("#tools-dialog").getByRole("button",{name:/^Status author ·/}).first().click();
+  await a.getByRole("button",{name:"Delete my status",exact:true}).click();
+  await expect(a.locator("#tools-dialog").getByRole("button",{name:/^Status author ·/})).toHaveCount(1);
+  await Promise.all(contexts.map(c=>c.close()));
 });

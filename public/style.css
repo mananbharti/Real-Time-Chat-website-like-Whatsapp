@@ -1818,3 +1818,102 @@ select {
 @media(max-width:1000px){.viewer-controls{gap:2px}.viewer-action{width:34px;height:40px;padding:7px 5px}.viewer-identity time{font-size:11px}.media-viewer header{padding-left:12px;padding-right:8px}.viewer-controls .viewer-action[aria-label=Pin],.viewer-controls .viewer-action[aria-label=React],.viewer-controls .viewer-action[aria-label=Forward],.viewer-controls .viewer-action[aria-label="Go to message"]{display:none}}
 @media(max-width:600px){.media-stage{padding:12px 48px}.viewer-nav.previous{left:4px}.viewer-nav.next{right:4px}.viewer-controls .viewer-action[aria-label=Star],.viewer-controls .viewer-action[aria-label=Reply],.viewer-controls .viewer-action[aria-label=Menu]{display:none}.viewer-identity{grid-template-columns:32px auto;gap:0 7px}.viewer-identity .avatar{width:32px;height:32px;min-width:32px}.viewer-identity time{font-size:10px}.viewer-identity strong{font-size:12px}}
 .viewer-filmstrip{overflow-y:hidden}
+
+@media (max-height: 480px) {
+  .message-context.context-tools {
+    width: 260px;
+    overflow-y: auto;
+  }
+  .message-context.context-tools .reaction-picker {
+    position: static;
+    margin-bottom: 6px;
+    box-shadow: none;
+  }
+}
+#attachment-preview.visual-attachment > video.pending-media {
+  flex: 0 1 auto;
+  width: 100%;
+  height: auto;
+}
+#tools-dialog .info-member {
+  flex-wrap: wrap;
+}
+.member-role {
+  font-size: 12px;
+  border-radius: 14px;
+  padding: 5px 9px;
+  color: var(--green);
+  background: var(--hover);
+  margin-left: auto;
+}
+.invite-link {
+  box-sizing: border-box;
+  width: 100%;
+  font-size: 13px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input);
+  color: var(--text);
+}
+.story-media-card {
+  background: #111b21;
+  padding: 0;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+.story-media-card img,
+.story-media-card video,
+.status-media-preview img,
+.status-media-preview video {
+  width: 100%;
+  max-height: 50dvh;
+  object-fit: contain;
+  display: block;
+}
+.story-caption {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0 16px 16px;
+}
+.status-media-preview {
+  margin: 16px 0;
+}
+#tools-dialog .info-member > span:not(.avatar) {
+  overflow-wrap: anywhere;
+  flex: 1 1 100px;
+  min-width: 0;
+}
+#tools-dialog.status-composer {
+  width: min(520px, calc(100vw - 30px));
+}
+.status-composer .status-media-preview img,
+.status-composer .status-media-preview video {
+  width: auto;
+  max-width: 100%;
+  max-height: 24dvh;
+  margin: auto;
+}
+.status-composer .status-input {
+  min-height: 64px;
+  box-sizing: border-box;
+}
+.status-composer .info-note {
+  margin: 10px 0;
+  line-height: 18px;
+}
+.status-composer .status-media-preview {
+  margin: 12px 0;
+}
+.status-composer > .tool-row:last-child {
+  margin-top: 8px;
+  text-align: center;
+  background: var(--green);
+  color: #fff;
+  border-radius: 20px;
+}
+.status-composer > .tool-row:last-child:disabled {
+  opacity: 0.5;
+}
