@@ -1,236 +1,1836 @@
-'use strict';
-const $ = id => document.getElementById(id);
-const socket = io({ autoConnect: false });
-let profile = null;
-let selfId = null;
-let joined = false;
-let sending = false;
-let joining = false;
-let joinGeneration = 0;
-let typingTimer;
-let lastTyping = 0;
-let typingActive = false;
-const typingUsers = new Map();
-const seen = new Set();
-let ownIds = new Set();
+"use strict";
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+};
+let me = null,
+  socket = null,
+  activeId = null,
+  chats = new Map(),
+  messages = [],
+  filter = "all",
+  signup = false,
+  contacts = [],
+  groupMode = false,
+  selected = new Set(),
+  reply = null,
+  attachment = null,
+  busy = false,
+  uploading = false,
+  hasMore = false,
+  openGeneration = 0;
+let recorder = null,
+  recordStream = null,
+  recordTimer = null,
+  recordStart = 0,
+  cancelRecord = false,
+  pendingId = null,
+  typingActive = false,
+  lastTyping = 0,
+  typingStop;
+const typers = new Map(),
+  drafts = new Map();
 try {
-  profile = JSON.parse(sessionStorage.getItem('gather-profile'));
-  ownIds = new Set(JSON.parse(sessionStorage.getItem('gather-own')) || []);
-} catch { /* Storage can be unavailable in private browsing. */ }
-function save(key, value) { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* Chat still works without storage. */ } }
-const requestedRoom = new URL(location.href).searchParams.get('room');
-if (requestedRoom && /^[a-z0-9][a-z0-9-]{0,31}$/.test(requestedRoom)) {
-  if (profile) profile.room = requestedRoom;
-  $('room-input').value = requestedRoom;
+  document.body.classList.toggle(
+    "light",
+    localStorage.getItem("chat-theme") === "light",
+  );
+} catch {}
+const active = () => chats.get(activeId);
+function toast(text) {
+  $("toast").textContent = text;
+  $("toast").hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => ($("toast").hidden = true), 4000);
 }
-function notice(text = '') { $('notice').textContent = text; $('notice').hidden = !text; }
-function updateComposer() {
-  const disabled = !joined || !socket.connected;
-  $('message-input').disabled = disabled;
-  $('send').disabled = disabled || sending || !$('message-input').value.trim();
-  $('invite').disabled = !joined;
+function notice(text = "") {
+  $("notice").textContent = text;
+  $("notice").hidden = !text;
 }
-function typingDisplay() {
-  const now = Date.now();
-  for (const [id, item] of typingUsers) if (item.until < now) typingUsers.delete(id);
-  const names = [...typingUsers.values()].map(item => item.username);
-  $('typing').textContent = names.length ? `${names.slice(0, 2).join(', ')} ${names.length === 1 ? 'is' : 'are'} typing...` : '';
-}
-setInterval(typingDisplay, 1000);
-function renderMessage(message, scroll = true) {
-  if (message.room !== profile?.room || seen.has(message.id)) return;
-  seen.add(message.id);
-  const mine = message.senderId === selfId || ownIds.has(message.id);
-  if (mine) {
-    ownIds.add(message.id);
-    ownIds = new Set([...ownIds].slice(-100));
-    save('gather-own', [...ownIds]);
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.body instanceof FormData
+        ? {}
+        : { "Content-Type": "application/json" }),
+      ...options.headers,
+    },
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    if (response.status === 401 && me) showAuth();
+    throw new Error(result.error || "Request failed.");
   }
-  const li = document.createElement('li');
-  li.className = `message${mine ? ' mine' : ''}`;
-  li.dataset.messageId = message.id;
-  const author = document.createElement('span');
-  author.className = 'message-author';
-  author.textContent = mine ? 'You' : message.username;
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  const text = document.createElement('p');
-  text.className = 'message-text';
-  text.textContent = message.text;
-  const time = document.createElement('time');
-  time.className = 'message-meta';
-  time.dateTime = message.sentAt;
-  time.title = new Date(message.sentAt).toLocaleString();
-  time.textContent = new Date(message.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (mine ? ' · sent' : '');
-  bubble.append(text, time);
-  li.append(author, bubble);
-  const body = $('chat-body');
-  const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 100;
-  $('messages').append(li);
-  while ($('messages').children.length > 100) {
-    const first = $('messages').firstElementChild;
-    seen.delete(first.dataset.messageId);
-    first.remove();
-  }
-  $('welcome').hidden = true;
-  $('room-preview').textContent = message.text;
-  if (scroll && (nearBottom || mine)) body.scrollTop = body.scrollHeight;
+  return result;
 }
-function join(nextProfile, auto = false) {
-  if (!socket.connected) {
-    $('join-error').textContent = 'Not connected yet. Wait a moment and try again.';
-    return;
-  }
-  const generation = ++joinGeneration;
-  joining = true;
-  $('join-button').disabled = true;
-  $('join-error').textContent = '';
-  socket.timeout(5000).emit('join', nextProfile, (error, result) => {
-    if (generation !== joinGeneration) return;
-    joining = false;
-    $('join-button').disabled = false;
-    if (error || result?.error || !result?.ok) {
-      const text = result?.error || 'Could not join. Check your connection and try again.';
-      $('join-error').textContent = text;
-      if (auto && !$('join-dialog').open) $('join-dialog').showModal();
-      return;
-    }
-    const changedRoom = profile?.room !== result.room;
-    profile = { username: result.username, room: result.room };
-    save('gather-profile', profile);
-    selfId = result.selfId;
-    joined = true;
-    if (changedRoom) $('message-input').value = '';
-    $('username-input').value = profile.username;
-    $('room-input').value = profile.room;
-    $('room-title').textContent = profile.room;
-    $('sidebar-room').textContent = profile.room;
-    $('messages').replaceChildren();
-    $('welcome').hidden = false;
-    $('room-preview').textContent = 'Be the first to say hello';
-    seen.clear();
-    typingUsers.clear();
-    typingDisplay();
-    for (const message of result.messages) renderMessage(message, false);
-    $('chat-body').scrollTop = $('chat-body').scrollHeight;
-    const url = new URL(location.href);
-    url.searchParams.set('room', profile.room);
-    history.replaceState(null, '', url);
-    $('join-dialog').close();
-    notice();
-    updateComposer();
-    $('message-input').dispatchEvent(new Event('input'));
-    $('message-input').focus();
+function showAuth() {
+  socket?.disconnect();
+  if (recorder) stopRecording(true);
+  me = null;
+  chats.clear();
+  messages = [];
+  activeId = null;
+  drafts.clear();
+  $("messages").replaceChildren();
+  $("active-chat").hidden = true;
+  $("empty-chat").hidden = false;
+  $("app").classList.remove("chat-open");
+  $("app").hidden = true;
+  $("auth-screen").hidden = false;
+  for (const dialog of document.querySelectorAll("dialog[open]"))
+    dialog.close();
+}
+function avatar(name, group = false) {
+  const a = el(
+    "span",
+    `avatar${group ? " group" : ""}`,
+    group
+      ? "♧"
+      : name
+          .trim()
+          .split(/\s+/)
+          .map((x) => x[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase(),
+  );
+  a.setAttribute("aria-hidden", "true");
+  return a;
+}
+function preview(m) {
+  if (!m) return "Start a conversation";
+  if (m.deletedAt) return "This message was deleted";
+  if (m.text) return m.text;
+  const mime = m.attachment?.mime || "";
+  return mime.startsWith("image/")
+    ? "📷 Photo"
+    : mime.startsWith("audio/")
+      ? "🎙 Voice note"
+      : mime.startsWith("video/")
+        ? "🎬 Video"
+        : "📄 " + (m.attachment?.filename || "Attachment");
+}
+function clock(date) {
+  return new Date(date).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
-$('join-form').addEventListener('submit', event => {
-  event.preventDefault();
-  if (!joining) join({ username: $('username-input').value, room: $('room-input').value });
-});
-$('join-dialog').addEventListener('cancel', event => { if (!joined) event.preventDefault(); });
-$('change-room').addEventListener('click', () => {
-  $('join-error').textContent = '';
-  $('join-dialog').showModal();
-});
-socket.on('connect', () => {
-  $('connection-status').textContent = 'Connected · choose a room';
-  if (profile && typeof profile.username === 'string' && typeof profile.room === 'string') join(profile, true);
-});
-socket.on('disconnect', () => {
-  joined = false;
-  joining = false;
-  sending = false;
-  ++joinGeneration;
-  $('join-button').disabled = false;
-  $('connection-status').textContent = 'Offline · reconnecting...';
-  typingUsers.clear();
-  typingDisplay();
-  notice('Connection lost. Your draft is safe. Rejoining when the connection returns.');
+function tickState(m, chat) {
+  const others = chat.members.filter((u) => u.id !== me.id);
+  if (others.length && others.every((u) => u.readSeq >= m.seq)) return "read";
+  if (others.length && others.every((u) => u.deliveredSeq >= m.seq))
+    return "delivered";
+  return "sent";
+}
+function ticks(m, chat) {
+  const state = tickState(m, chat);
+  const t = el("span", `ticks ${state}`, state === "sent" ? "✓" : "✓✓");
+  t.setAttribute(
+    "aria-label",
+    state === "read"
+      ? "Read by all"
+      : state === "delivered"
+        ? "Delivered to all"
+        : "Sent",
+  );
+  t.title = t.getAttribute("aria-label");
+  return t;
+}
+function renderChats() {
+  $("chat-list").replaceChildren();
+  const query = $("chat-search").value.toLowerCase();
+  const all = [...chats.values()].sort(
+    (a, b) =>
+      (b.prefs?.pinned || 0) - (a.prefs?.pinned || 0) ||
+      (b.last?.seq || 0) - (a.last?.seq || 0) ||
+      b.createdAt.localeCompare(a.createdAt),
+  );
+  const visible = all.filter(
+    (c) =>
+      (filter === "archived" ? c.prefs?.archived : !c.prefs?.archived) &&
+      (filter !== "unread" || c.unread > 0) &&
+      (filter !== "group" || c.kind === "group") &&
+      (c.name.toLowerCase().includes(query) ||
+        preview(c.last).toLowerCase().includes(query)),
+  );
+  for (const c of visible) {
+    const b = el(
+      "button",
+      `chat-item${c.id === activeId ? " selected" : ""}${c.unread ? " has-unread" : ""}`,
+    );
+    b.type = "button";
+    b.dataset.chatId = c.id;
+    b.setAttribute("aria-label", c.name);
+    b.setAttribute("role", "listitem");
+    const main = el("div", "chat-item-main"),
+      top = el("div", "chat-item-top"),
+      bottom = el("div", "chat-item-bottom");
+    top.append(
+      el("span", "chat-item-name", c.name),
+      el("time", "chat-item-time", c.last ? clock(c.last.createdAt) : ""),
+    );
+    if (c.last?.senderId === me.id) bottom.append(ticks(c.last, c));
+    bottom.append(
+      el(
+        "span",
+        "chat-preview",
+        (c.kind === "group" && c.last
+          ? `${c.last.senderId === me.id ? "You" : c.last.senderName}: `
+          : "") + preview(c.last),
+      ),
+    );
+    if (c.unread)
+      bottom.append(
+        el("span", "unread-badge", c.unread > 99 ? "99+" : c.unread),
+      );
+    if (c.prefs?.pinned) top.prepend(el("span", "chat-pref-icon", "⌖"));
+    if (c.prefs?.muted) bottom.append(el("span", "chat-pref-icon", "♩"));
+    main.append(top, bottom);
+    b.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      showChatMenu(c, { x: e.clientX, y: e.clientY });
+    });
+    b.append(chatAvatar(c), main);
+    b.addEventListener("click", () => openChat(c.id));
+    $("chat-list").append(b);
+  }
+  $("sidebar-empty").hidden = all.length > 0;
+}
+function subtitle() {
+  const c = active();
+  if (!c) return;
+  const typing = [...typers.values()].filter(
+    (t) => t.chatId === activeId && t.until > Date.now(),
+  );
+  const text = typing.length
+    ? `${typing
+        .map((t) => t.name)
+        .slice(0, 2)
+        .join(", ")} ${typing.length === 1 ? "is" : "are"} typing...`
+    : c.kind === "group"
+      ? c.members.map((u) => (u.id === me.id ? "You" : u.name)).join(", ")
+      : (() => {
+          const other = c.members.find((u) => u.id !== me.id);
+          if (other?.online) return "online";
+          if (other?.last_seen)
+            return (
+              "last seen " +
+              new Date(other.last_seen).toLocaleString([], {
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            );
+          return "offline";
+        })();
+  $("chat-subtitle").textContent = text;
+  $("typing").textContent = typing.length ? text : "";
+}
+setInterval(() => {
+  for (const [id, t] of typers) if (t.until < Date.now()) typers.delete(id);
+  subtitle();
+}, 1000);
+function updateComposer() {
+  const disabled =
+    !socket?.connected || !activeId || busy || uploading || !!recorder;
+  $("message-input").disabled = !socket?.connected || !activeId || !!recorder;
+  $("send").disabled =
+    disabled || (!$("message-input").value.trim() && !attachment);
+  $("voice-button").hidden = !!$("message-input").value.trim() || !!attachment;
+  $("voice-button").disabled = disabled;
+  $("attach-button").disabled = disabled;
+  $("emoji-button").disabled = disabled;
+}
+function markReceived(chatId, seq) {
+  if (socket?.connected) socket.emit("chat:delivered", { chatId, seq });
+}
+function markRead() {
+  if (
+    socket?.connected &&
+    activeId &&
+    document.visibilityState === "visible" &&
+    $("app").classList.contains("chat-open") &&
+    messages.length
+  ) {
+    const box = $("chat-body").getBoundingClientRect();
+    const visible = [...$("messages").querySelectorAll(".message")].filter(
+      (item) => {
+        const r = item.getBoundingClientRect();
+        return r.bottom > box.top && r.bottom <= box.bottom + 2;
+      },
+    );
+    const ids = new Set(visible.map((item) => item.dataset.messageId));
+    const seq = Math.max(
+      0,
+      ...messages.filter((m) => ids.has(m.id)).map((m) => m.seq),
+    );
+    const member = active()?.members.find((u) => u.id === me.id);
+    if ((member?.readSeq || 0) < seq)
+      socket.emit("chat:read", { chatId: activeId, seq });
+  }
+}
+function buildMessage(m) {
+  const mine = m.senderId === me.id,
+    c = active();
+  const li = el("li", `message${mine ? " mine" : ""}`);
+  li.dataset.messageId = m.id;
+  if (c.kind === "group" && !mine)
+    li.append(el("span", "message-author", m.senderName));
+  if (m.forwarded) li.append(el("span", "forward-label", "↪ Forwarded"));
+  if (m.deletedAt) {
+    li.append(el("p", "deleted-message", "⊘ This message was deleted"));
+  } else {
+    if (m.reply) {
+      const q = el("div", "reply-quote"),
+        p = el(
+          "p",
+          "",
+          m.reply.deleted_at
+            ? "This message was deleted"
+            : m.reply.text || "Attachment",
+        );
+      q.append(el("strong", "", m.reply.sender_name), p);
+      q.addEventListener("click", () => {
+        const target = [...$("messages").children].find(
+          (x) => x.dataset.messageId === m.reply.id,
+        );
+        if (target) {
+          target.scrollIntoView({ block: "center" });
+          target.classList.add("search-match");
+          setTimeout(() => target.classList.remove("search-match"), 1800);
+        } else
+          toast(
+            "The original message is older. Load earlier messages to find it.",
+          );
+      });
+      li.append(q);
+    }
+    if (m.attachment) {
+      const a = m.attachment,
+        url = "/api/attachments/" + a.id;
+      if (a.mime.startsWith("image/")) {
+        const link = el("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        const image = el("img", "attachment-image");
+        image.src = url;
+        image.alt = a.filename;
+        image.loading = "lazy";
+        link.append(image);
+        li.append(link);
+      } else if (a.mime.startsWith("audio/")) {
+        const audio = el("audio");
+        audio.controls = true;
+        audio.preload = "metadata";
+        audio.src = url;
+        audio.setAttribute("aria-label", "Voice note from " + m.senderName);
+        li.append(audio);
+      } else if (a.mime.startsWith("video/")) {
+        const video = el("video");
+        video.controls = true;
+        video.preload = "metadata";
+        video.src = url;
+        li.append(video);
+      } else {
+        const link = el("a", "file-link");
+        link.href = url;
+        link.download = a.filename;
+        const detail = el("span", "", a.filename);
+        detail.append(el("small", "", `${Math.ceil(a.size / 1024)} KB · PDF`));
+        link.append(el("span", "file-icon", "▤"), detail);
+        li.append(link);
+      }
+    }
+    if (m.text) {
+      const paragraph = el("p", "message-text");
+      appendLinkedText(paragraph, m.text);
+      li.append(paragraph);
+      const url = m.text.match(/https?:\/\/[^\s<>]+/i)?.[0];
+      if (url) {
+        try {
+          const parsed = new URL(url);
+          const card = el("a", "link-card");
+          card.href = parsed.href;
+          card.target = "_blank";
+          card.rel = "noopener noreferrer";
+          card.append(
+            el("strong", "", parsed.hostname),
+            el(
+              "span",
+              "",
+              parsed.pathname === "/"
+                ? "Open website"
+                : decodeURIComponent(parsed.pathname).slice(0, 90),
+            ),
+          );
+          li.append(card);
+        } catch {}
+      }
+    }
+  }
+  const meta = el("div", "message-meta"),
+    time = el("time", "", clock(m.createdAt));
+  time.dateTime = m.createdAt;
+  time.title = new Date(m.createdAt).toLocaleString();
+  meta.append(time);
+  if (m.starred) meta.prepend(el("span", "star-indicator", "★"));
+  if (mine) meta.append(ticks(m, c));
+  li.append(meta);
+  const replyButton = el("button", "message-action", "↩");
+  replyButton.type = "button";
+  replyButton.setAttribute("aria-label", "Reply to message");
+  replyButton.addEventListener("click", () => setReply(m));
+  if (!m.deletedAt) li.append(replyButton);
+  const menuButton = el("button", "message-menu-button", "⌄");
+  menuButton.type = "button";
+  menuButton.setAttribute("aria-label", "Message actions");
+  menuButton.addEventListener("click", () => showMessageMenu(m));
+  li.append(menuButton);
+  li.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    showMessageMenu(m, { x: e.clientX, y: e.clientY });
+  });
+  let startX = 0;
+  li.addEventListener(
+    "touchstart",
+    (e) => {
+      startX = e.changedTouches[0].clientX;
+    },
+    { passive: true },
+  );
+  li.addEventListener(
+    "touchend",
+    (e) => {
+      if (e.changedTouches[0].clientX - startX > 65 && !m.deletedAt)
+        setReply(m);
+    },
+    { passive: true },
+  );
+  li.addEventListener("dblclick", (e) => {
+    if (!e.target.closest("audio,video,a,button")) setReply(m);
+  });
+  return li;
+}
+function renderMessages(scroll = false) {
+  const body = $("chat-body"),
+    oldTop = body.scrollTop,
+    nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 100;
+  $("messages").replaceChildren();
+  let day = "";
+  for (const m of messages) {
+    const next = new Date(m.createdAt).toLocaleDateString([], {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    if (next !== day) {
+      $("messages").append(el("li", "day-divider", next));
+      day = next;
+    }
+    $("messages").append(buildMessage(m));
+  }
+  if (scroll || nearBottom) body.scrollTop = body.scrollHeight;
+  else body.scrollTop = oldTop;
+  searchMessages();
+}
+function updateTicks() {
+  const c = active();
+  if (!c) return;
+  for (const li of $("messages").querySelectorAll(".mine")) {
+    const m = messages.find((m) => m.id === li.dataset.messageId);
+    if (m) {
+      const old = li.querySelector(".ticks");
+      old?.replaceWith(ticks(m, c));
+    }
+  }
+}
+function setReply(m) {
+  reply = m;
+  $("reply-name").textContent = m.senderId === me.id ? "You" : m.senderName;
+  $("reply-text").textContent = preview(m);
+  $("reply-bar").hidden = false;
+  $("message-input").focus();
+}
+function clearReply() {
+  reply = null;
+  $("reply-bar").hidden = true;
+}
+function clearAttachment() {
+  attachment = null;
+  $("attachment-preview").hidden = true;
+  $("file-input").value = "";
   updateComposer();
+}
+async function openChat(id) {
+  if (activeId) drafts.set(activeId, $("message-input").value);
+  if (recorder) stopRecording(true);
+  activeId = id;
+  const generation = ++openGeneration;
+  messages = [];
+  pendingId = null;
+  busy = false;
+  clearReply();
+  clearAttachment();
+  typers.clear();
+  notice();
+  $("app").classList.add("chat-open");
+  $("empty-chat").hidden = true;
+  $("active-chat").hidden = false;
+  const c = active();
+  $("chat-title").textContent = c.name;
+  $("chat-avatar").replaceWith(
+    Object.assign(chatAvatar(c), {
+      id: "chat-avatar",
+      className: `avatar large${c.kind === "group" ? " group" : ""}`,
+    }),
+  );
+  $("message-input").value = drafts.get(id) || "";
+  $("messages").replaceChildren();
+  $("load-older").hidden = true;
+  $("message-search-bar").hidden = true;
+  $("message-search").value = "";
+  subtitle();
+  renderChats();
+  updateComposer();
+  try {
+    const result = await api(`/api/chats/${id}/messages`);
+    if (generation !== openGeneration) return;
+    const merged = new Map(
+      [...result.messages, ...messages].map((m) => [m.id, m]),
+    );
+    messages = [...merged.values()].sort((a, b) => a.seq - b.seq);
+    hasMore = result.hasMore;
+    $("load-older").hidden = !hasMore;
+    renderMessages(true);
+    if (messages.length) markReceived(id, messages.at(-1).seq);
+    markRead();
+    if (innerWidth > 640) $("message-input").focus();
+  } catch (e) {
+    notice(e.message);
+  }
+}
+async function refreshChats() {
+  const result = await api("/api/chats");
+  chats = new Map(result.chats.map((c) => [c.id, c]));
+  renderChats();
+  if (activeId && chats.has(activeId)) subtitle();
+}
+async function start(user) {
+  me = user;
+  try {
+    drafts.clear();
+    for (const [id, text] of JSON.parse(
+      localStorage.getItem("chat-drafts-" + me.id) || "[]",
+    ))
+      if (typeof text === "string") drafts.set(id, text);
+  } catch {}
+  $("password-input").value = "";
+  $("auth-screen").hidden = true;
+  $("app").hidden = false;
+  $("self-avatar").textContent = me.name.slice(0, 2).toUpperCase();
+  await refreshChats();
+  socket?.disconnect();
+  socket = io();
+  socket.on("connect", async () => {
+    $("connection-status").textContent = "Connected";
+    updateComposer();
+    try {
+      await refreshChats();
+      for (const c of chats.values())
+        if (c.last) markReceived(c.id, c.last.seq);
+      if (activeId) await openChat(activeId);
+    } catch (e) {
+      toast(e.message);
+    }
+  });
+  socket.on("disconnect", (reason) => {
+    $("connection-status").textContent = "Offline · reconnecting";
+    updateComposer();
+    if (reason === "io server disconnect") {
+      showAuth();
+      toast("Your session ended. Sign in again.");
+    }
+  });
+  socket.on("connect_error", (e) => {
+    $("connection-status").textContent = "Connection interrupted";
+    if (/Sign in/.test(e.message)) showAuth();
+  });
+  socket.on("chat-updated", ({ chat }) => {
+    chats.set(chat.id, chat);
+    renderChats();
+    if (chat.id === activeId) {
+      subtitle();
+      updateTicks();
+    }
+  });
+  socket.on("message:new", (m) => {
+    const c = chats.get(m.chatId);
+    if (c) {
+      c.last = m;
+      if (m.senderId !== me.id) c.unread++;
+      renderChats();
+    }
+    markReceived(m.chatId, m.seq);
+    if (m.chatId === activeId) {
+      if (!messages.some((x) => x.id === m.id)) {
+        messages.push(m);
+        messages.sort((a, b) => a.seq - b.seq);
+        appendRenderedMessage(m, m.senderId === me.id);
+      }
+      typers.delete(m.senderId);
+      subtitle();
+      markRead();
+    } else if (m.senderId !== me.id && !c?.prefs?.muted) {
+      toast(m.senderName + ": " + preview(m));
+      if (
+        document.hidden &&
+        window.Notification &&
+        Notification.permission === "granted" &&
+        notificationsEnabled()
+      )
+        new Notification(m.senderName, { body: preview(m), tag: m.chatId });
+    }
+  });
+  socket.on("message:changed", ({ chatId, message }) => {
+    if (chatId === activeId) {
+      const index = messages.findIndex((m) => m.id === message.id);
+      if (index >= 0) {
+        messages[index] = { ...messages[index], ...message };
+        const node = [...$("messages").children].find(
+          (n) => n.dataset.messageId === message.id,
+        );
+        node?.replaceWith(buildMessage(messages[index]));
+      }
+    }
+  });
+  socket.on("user-presence", (u) => {
+    if (u.id === me.id) me = { ...me, ...u };
+    for (const c of chats.values()) {
+      for (const m of c.members) if (m.id === u.id) Object.assign(m, u);
+      if (c.kind === "direct")
+        c.name = c.members.find((m) => m.id !== me.id)?.name || c.name;
+    }
+    renderChats();
+    if (active()) {
+      $("chat-title").textContent = active().name;
+      $("chat-avatar").replaceWith(
+        Object.assign(chatAvatar(active()), {
+          id: "chat-avatar",
+          className:
+            "avatar large" + (active().kind === "group" ? " group" : ""),
+        }),
+      );
+    }
+    subtitle();
+  });
+  socket.on("typing", (data) => {
+    if (data.active)
+      typers.set(data.userId, { ...data, until: Date.now() + 3500 });
+    else typers.delete(data.userId);
+    subtitle();
+  });
+}
+$("auth-toggle").addEventListener("click", () => {
+  signup = !signup;
+  $("auth-title").textContent = signup ? "Create your account" : "Welcome back";
+  $("auth-description").textContent = signup
+    ? "Your conversations start here."
+    : "Sign in to pick up the conversation.";
+  $("name-field").hidden = !signup;
+  $("name-input").required = signup;
+  $("password-input").autocomplete = signup
+    ? "new-password"
+    : "current-password";
+  $("auth-submit").textContent = signup ? "Create account" : "Sign in";
+  $("auth-toggle").textContent = signup
+    ? "Already have an account? Sign in"
+    : "New here? Create an account";
+  $("auth-error").textContent = "";
 });
-socket.on('connect_error', () => {
-  $('connection-status').textContent = 'Unable to connect · retrying...';
-  $('join-error').textContent = 'The server is unavailable. Retrying automatically.';
-});
-socket.on('presence', members => {
-  if (!joined) return;
-  $('members').replaceChildren();
-  $('member-count').textContent = String(members.length);
-  $('connection-status').textContent = `${members.length} ${members.length === 1 ? 'person' : 'people'} online · public room`;
-  for (const member of members) {
-    const li = document.createElement('li');
-    const avatar = document.createElement('span');
-    avatar.className = 'avatar';
-    avatar.textContent = member.username.slice(0, 2).toUpperCase();
-    avatar.setAttribute('aria-hidden', 'true');
-    const name = document.createElement('span');
-    name.className = 'member-name';
-    name.textContent = member.username;
-    li.append(avatar, name);
-    if (member.id === selfId) { const you = document.createElement('small'); you.textContent = 'you'; li.append(you); }
-    $('members').append(li);
+$("auth-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("auth-submit").disabled = true;
+  $("auth-error").textContent = "";
+  try {
+    const data = await api("/api/" + (signup ? "register" : "login"), {
+      method: "POST",
+      body: JSON.stringify({
+        handle: $("handle-input").value,
+        name: $("name-input").value,
+        password: $("password-input").value,
+      }),
+    });
+    await start(data.user);
+  } catch (e) {
+    $("auth-error").textContent = e.message;
+  } finally {
+    $("auth-submit").disabled = false;
   }
 });
-socket.on('message', message => renderMessage(message));
-socket.on('typing', data => {
-  if (data.active) typingUsers.set(data.id, { username: data.username, until: Date.now() + 3500 });
-  else typingUsers.delete(data.id);
-  typingDisplay();
+async function loadContacts() {
+  try {
+    const result = await api(
+      "/api/users?q=" + encodeURIComponent($("contact-search").value),
+    );
+    contacts = result.users;
+    renderContacts();
+  } catch (e) {
+    $("contacts-error").textContent = e.message;
+  }
+}
+function renderContacts() {
+  $("contact-list").replaceChildren();
+  if (!contacts.length)
+    $("contact-list").append(
+      el(
+        "p",
+        "info-note",
+        "No matching people. Ask someone to create an account here first.",
+      ),
+    );
+  for (const u of contacts) {
+    const b = el("button", `contact${selected.has(u.id) ? " selected" : ""}`);
+    b.type = "button";
+    b.dataset.userId = u.id;
+    b.setAttribute("aria-label", u.name + " @" + u.handle);
+    const detail = el("span", "contact-name");
+    detail.append(
+      el("strong", "", u.name),
+      el("small", "", `@${u.handle}${u.online ? " · online" : ""}`),
+    );
+    b.append(userAvatar(u), detail);
+    if (groupMode) b.append(el("span", "contact-check"));
+    b.addEventListener("click", async () => {
+      if (groupMode) {
+        selected.has(u.id) ? selected.delete(u.id) : selected.add(u.id);
+        renderContacts();
+      } else {
+        b.disabled = true;
+        await createChat("direct", [u.id]);
+        b.disabled = false;
+      }
+    });
+    $("contact-list").append(b);
+  }
+}
+function setContactMode(group) {
+  groupMode = group;
+  selected.clear();
+  $("group-name-field").hidden = !group;
+  $("create-group").hidden = !group;
+  $("direct-mode").classList.toggle("active", !group);
+  $("group-mode").classList.toggle("active", group);
+  $("contacts-title").textContent = group ? "New group" : "New chat";
+  renderContacts();
+}
+async function showContacts() {
+  $("contacts-error").textContent = "";
+  $("contact-search").value = "";
+  setContactMode(false);
+  $("contacts-dialog").showModal();
+  await loadContacts();
+}
+async function createChat(kind, members) {
+  try {
+    const { chat } = await api("/api/chats", {
+      method: "POST",
+      body: JSON.stringify({ kind, members, name: $("group-name").value }),
+    });
+    chats.set(chat.id, chat);
+    $("contacts-dialog").close();
+    await openChat(chat.id);
+  } catch (e) {
+    $("contacts-error").textContent = e.message;
+  }
+}
+$("new-chat").addEventListener("click", showContacts);
+$("empty-new-chat").addEventListener("click", showContacts);
+$("close-contacts").addEventListener("click", () =>
+  $("contacts-dialog").close(),
+);
+$("direct-mode").addEventListener("click", () => setContactMode(false));
+$("group-mode").addEventListener("click", () => setContactMode(true));
+$("contact-search").addEventListener("input", () => {
+  clearTimeout(loadContacts.timer);
+  loadContacts.timer = setTimeout(loadContacts, 180);
 });
-$('message-input').addEventListener('input', () => {
-  const input = $('message-input');
-  $('character-count').textContent = `${input.value.length}/2000`;
-  input.style.height = 'auto';
-  input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+$("create-group").addEventListener("click", async () => {
+  $("create-group").disabled = true;
+  await createChat("group", [...selected]);
+  $("create-group").disabled = false;
+});
+$("chat-search").addEventListener("input", renderChats);
+for (const button of document.querySelectorAll("[data-filter]"))
+  button.addEventListener("click", () => {
+    filter = button.dataset.filter;
+    document
+      .querySelectorAll("[data-filter]")
+      .forEach((b) => b.classList.toggle("active", b === button));
+    renderChats();
+  });
+$("back").addEventListener("click", () => {
+  $("app").classList.remove("chat-open");
+  if (recorder) stopRecording(true);
+});
+$("show-chats").addEventListener("click", () =>
+  $("app").classList.remove("chat-open"),
+);
+$("cancel-reply").addEventListener("click", clearReply);
+$("remove-attachment").addEventListener("click", clearAttachment);
+$("message-input").addEventListener("input", () => {
+  const input = $("message-input");
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 140) + "px";
+  drafts.set(activeId, input.value);
+  persistDrafts();
   updateComposer();
-  clearTimeout(typingTimer);
-  if (!joined || !socket.connected) return;
+  clearTimeout(typingStop);
+  if (!socket?.connected || !activeId) return;
   const active = Boolean(input.value.trim());
   if (active !== typingActive || Date.now() - lastTyping > 1000) {
-    socket.emit('typing', active);
+    socket.emit("typing", { chatId: activeId, active });
     typingActive = active;
     lastTyping = Date.now();
   }
-  typingTimer = setTimeout(() => {
+  const id = activeId;
+  typingStop = setTimeout(() => {
     typingActive = false;
-    if (socket.connected) socket.emit('typing', false);
+    if (socket?.connected) socket.emit("typing", { chatId: id, active: false });
   }, 1800);
 });
-$('message-input').addEventListener('keydown', event => {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-    event.preventDefault();
-    $('message-form').requestSubmit();
+$("message-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    $("message-form").requestSubmit();
   }
 });
-$('message-form').addEventListener('submit', event => {
-  event.preventDefault();
-  const input = $('message-input');
-  const draft = input.value;
-  if (!draft.trim() || !joined || !socket.connected || sending) return;
-  const sendingRoom = profile.room;
-  sending = true;
+let pendingFingerprint = "";
+$("message-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (
+    !socket?.connected ||
+    !activeId ||
+    busy ||
+    uploading ||
+    (!$("message-input").value.trim() && !attachment)
+  )
+    return;
+  const chatId = activeId,
+    draft = $("message-input").value,
+    attachmentId = attachment?.id || null,
+    replyTo = reply?.id || null;
+  const fingerprint = JSON.stringify([chatId, draft, attachmentId, replyTo]);
+  if (fingerprint !== pendingFingerprint) {
+    pendingId = crypto.randomUUID();
+    pendingFingerprint = fingerprint;
+  }
+  busy = true;
   notice();
   updateComposer();
-  socket.timeout(5000).emit('message', { text: draft }, (error, result) => {
-    sending = false;
-    if (profile?.room !== sendingRoom) { updateComposer(); return; }
-    if (error || result?.error || !result?.ok) {
-      notice(result?.error || 'Delivery not confirmed. Check the conversation before trying again. Your draft was kept.');
-    } else if (input.value === draft) {
-      input.value = '';
-      input.dispatchEvent(new Event('input'));
-      if (socket.connected) socket.volatile.emit('typing', false);
-    }
-    updateComposer();
-    if (joined) input.focus();
-  });
+  socket
+    .timeout(8000)
+    .emit(
+      "message:send",
+      { chatId, text: draft, attachmentId, replyTo, clientId: pendingId },
+      (err, result) => {
+        busy = false;
+        if (chatId !== activeId) return;
+        if (err || result?.error || !result?.ok) {
+          notice(
+            result?.error ||
+              "Delivery not confirmed. Your draft is safe. Retrying this unchanged draft will not create a duplicate.",
+          );
+        } else {
+          if (!messages.some((m) => m.id === result.message.id)) {
+            messages.push(result.message);
+            messages.sort((a, b) => a.seq - b.seq);
+            appendRenderedMessage(result.message, true);
+          }
+          if ($("message-input").value === draft) {
+            $("message-input").value = "";
+            drafts.delete(chatId);
+            $("message-input").dispatchEvent(new Event("input"));
+          }
+          if (attachment?.id === attachmentId) clearAttachment();
+          if (reply?.id === replyTo) clearReply();
+          pendingId = null;
+          pendingFingerprint = "";
+          socket.emit("typing", { chatId, active: false });
+        }
+        updateComposer();
+        if (innerWidth > 640) $("message-input").focus();
+      },
+    );
 });
-$('invite').addEventListener('click', async () => {
+async function uploadFile(file, targetId = activeId) {
+  if (!file || !targetId) return;
+  if (file.size > 25 * 1024 * 1024) {
+    notice("Files must be smaller than 25 MB.");
+    return;
+  }
+  uploading = true;
+  notice("Uploading " + file.name + "...");
+  updateComposer();
+  const data = new FormData();
+  data.append("file", file);
   try {
-    await navigator.clipboard.writeText(location.href);
-    $('invite').textContent = 'Link copied ✓';
-    setTimeout(() => { $('invite').textContent = 'Copy room link ↗'; }, 2000);
-  } catch { notice('Could not copy automatically. Copy the room link from your address bar.'); }
+    const result = await api(`/api/chats/${targetId}/attachments`, {
+      method: "POST",
+      body: data,
+    });
+    if (targetId !== activeId) {
+      toast(
+        "Upload finished, but the conversation changed. Select the file again in the intended chat.",
+      );
+      return;
+    }
+    attachment = result.attachment;
+    $("attachment-name").textContent =
+      attachment.filename +
+      " · " +
+      Math.ceil(attachment.size / 1024) +
+      " KB · ready to send";
+    $("attachment-preview").hidden = false;
+    const old = $("attachment-preview").querySelector("audio");
+    old?.remove();
+    if (attachment.mime.startsWith("audio/")) {
+      const preview = el("audio");
+      preview.controls = true;
+      preview.src = "/api/attachments/" + attachment.id;
+      preview.setAttribute("aria-label", "Voice note preview");
+      $("attachment-preview").prepend(preview);
+    }
+    notice();
+  } catch (e) {
+    notice(e.message);
+  } finally {
+    uploading = false;
+    updateComposer();
+  }
+}
+$("attach-button").addEventListener("click", () => $("file-input").click());
+$("file-input").addEventListener("change", (e) =>
+  uploadFile(e.target.files[0]),
+);
+const emojis = [
+  "😀",
+  "😂",
+  "🥹",
+  "😊",
+  "😍",
+  "🥳",
+  "😎",
+  "🤔",
+  "😭",
+  "🙏",
+  "👍",
+  "👎",
+  "👏",
+  "🙌",
+  "❤️",
+  "💚",
+  "🔥",
+  "✨",
+  "🎉",
+  "💯",
+  "✅",
+  "👀",
+  "☕",
+  "🎙",
+];
+for (const emoji of emojis) {
+  const b = el("button", "", emoji);
+  b.type = "button";
+  b.setAttribute("aria-label", "Insert " + emoji);
+  b.addEventListener("click", () => {
+    const input = $("message-input");
+    input.setRangeText(emoji, input.selectionStart, input.selectionEnd, "end");
+    input.dispatchEvent(new Event("input"));
+    input.focus();
+  });
+  $("emoji-picker").append(b);
+}
+$("emoji-button").addEventListener(
+  "click",
+  () => ($("emoji-picker").hidden = !$("emoji-picker").hidden),
+);
+function stopRecording(cancel = false) {
+  if (!recorder) return;
+  cancelRecord = cancel;
+  if (recorder.state !== "inactive") recorder.stop();
+  clearInterval(recordTimer);
+  recordStream?.getTracks().forEach((t) => t.stop());
+}
+$("voice-button").addEventListener("click", async () => {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    notice(
+      "Voice recording needs a supported browser and HTTPS (or localhost). You can still attach an audio file.",
+    );
+    return;
+  }
+  const targetId = activeId;
+  try {
+    recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (targetId !== activeId) {
+      recordStream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const mime = [
+      "audio/webm;codecs=opus",
+      "audio/ogg;codecs=opus",
+      "audio/mp4",
+    ].find((t) => MediaRecorder.isTypeSupported(t));
+    const r = new MediaRecorder(recordStream, mime ? { mimeType: mime } : {});
+    recorder = r;
+    const chunks = [];
+    cancelRecord = false;
+    recordStart = Date.now();
+    $("recording-time").textContent = "0:00";
+    r.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    r.onstop = () => {
+      const cancelled = cancelRecord;
+      recorder = null;
+      stopWaveform();
+      clearInterval(recordTimer);
+      recordStream?.getTracks().forEach((t) => t.stop());
+      $("recording-bar").hidden = true;
+      $("message-form").hidden = false;
+      updateComposer();
+      if (!cancelled && chunks.length) {
+        const type = r.mimeType || "audio/webm";
+        const extension = type.includes("mp4")
+          ? "m4a"
+          : type.includes("ogg")
+            ? "ogg"
+            : "webm";
+        uploadFile(
+          new File(chunks, `Voice note.${extension}`, { type }),
+          targetId,
+        );
+      }
+    };
+    r.onerror = () => {
+      cancelRecord = true;
+      stopRecording(true);
+      notice("Recording failed. Try again or attach an audio file.");
+    };
+    startWaveform(recordStream);
+    r.start();
+    $("message-form").hidden = true;
+    $("recording-bar").hidden = false;
+    recordTimer = setInterval(() => {
+      const sec = Math.floor((Date.now() - recordStart) / 1000);
+      $("recording-time").textContent =
+        Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+      if (sec >= 120) stopRecording();
+    }, 250);
+    updateComposer();
+  } catch (e) {
+    recordStream?.getTracks().forEach((t) => t.stop());
+    notice(
+      e.name === "NotAllowedError"
+        ? "Microphone permission was denied. Allow it in your browser or attach an audio file."
+        : "Could not access the microphone. Check that a microphone is connected.",
+    );
+  }
 });
-if (!profile) $('join-dialog').showModal();
-socket.connect();
+$("cancel-recording").addEventListener("click", () => stopRecording(true));
+$("stop-recording").addEventListener("click", () => stopRecording());
+$("load-older").addEventListener("click", async () => {
+  const id = activeId,
+    before = messages[0]?.seq,
+    body = $("chat-body"),
+    height = body.scrollHeight;
+  try {
+    const result = await api(`/api/chats/${id}/messages?before=${before}`);
+    if (id !== activeId) return;
+    messages = [...result.messages, ...messages];
+    hasMore = result.hasMore;
+    $("load-older").hidden = !hasMore;
+    renderMessages();
+    body.scrollTop = body.scrollHeight - height;
+  } catch (e) {
+    notice(e.message);
+  }
+});
+function searchMessages() {
+  const q = $("message-search").value.toLowerCase();
+  let count = 0;
+  for (const item of $("messages").querySelectorAll(".message")) {
+    const m = messages.find((m) => m.id === item.dataset.messageId),
+      match =
+        !!q &&
+        (m.text.toLowerCase().includes(q) ||
+          m.attachment?.filename.toLowerCase().includes(q));
+    item.classList.toggle("search-match", match);
+    if (match) count++;
+  }
+  $("search-count").textContent = q ? count + " found" : "";
+}
+$("search-messages-toggle").addEventListener("click", () => {
+  $("message-search-bar").hidden = false;
+  $("message-search").focus();
+});
+$("close-message-search").addEventListener("click", () => {
+  $("message-search-bar").hidden = true;
+  $("message-search").value = "";
+  searchMessages();
+});
+$("message-search").addEventListener("input", searchMessages);
+$("chat-info").addEventListener("click", () => {
+  const c = active();
+  if (!c) return;
+  $("info-content").replaceChildren();
+  $("info-content").append(
+    el(
+      "p",
+      "info-note",
+      c.name + " · " + (c.kind === "group" ? "Group" : "Direct conversation"),
+    ),
+  );
+  for (const u of c.members) {
+    const row = el("div", "info-member"),
+      d = el("span");
+    d.append(
+      el("strong", "", u.name + (u.id === me.id ? " (you)" : "")),
+      el("small", "", `@${u.handle} · ${u.online ? "online" : "offline"}`),
+    );
+    row.append(userAvatar(u), d);
+    $("info-content").append(row);
+  }
+  $("info-content").append(
+    el(
+      "p",
+      "info-note",
+      "Only listed members have access. Messages are stored on this server. No end-to-end encryption.",
+    ),
+  );
+  $("info-dialog").showModal();
+});
+$("close-info").addEventListener("click", () => $("info-dialog").close());
+function showAccount() {
+  $("account-info").replaceChildren(
+    userAvatar(me),
+    el("p", "", me.name),
+    el("p", "info-note", "@" + me.handle),
+  );
+  const theme = el(
+    "button",
+    "primary-button",
+    "Switch to " +
+      (document.body.classList.contains("light") ? "dark" : "light") +
+      " theme",
+  );
+  theme.addEventListener("click", () => {
+    toggleTheme();
+    $("account-dialog").close();
+  });
+  $("account-info").append(theme);
+  $("account-dialog").showModal();
+}
+function toggleTheme() {
+  const light = document.body.classList.toggle("light");
+  try {
+    localStorage.setItem("chat-theme", light ? "light" : "dark");
+  } catch {}
+  $("theme-button").setAttribute(
+    "aria-label",
+    "Switch to " + (light ? "dark" : "light") + " theme",
+  );
+}
+$("theme-button").addEventListener("click", toggleTheme);
+$("account-button").addEventListener("click", showAccount);
+$("mobile-account").addEventListener("click", showAccount);
+$("close-account").addEventListener("click", () => $("account-dialog").close());
+$("logout").addEventListener("click", async () => {
+  try {
+    await api("/api/logout", { method: "POST", body: "{}" });
+    showAuth();
+    chats.clear();
+    messages = [];
+    activeId = null;
+    drafts.clear();
+    $("active-chat").hidden = true;
+    $("empty-chat").hidden = false;
+    $("app").classList.remove("chat-open");
+  } catch (e) {
+    toast(e.message);
+  }
+});
+document.addEventListener("visibilitychange", markRead);
+window.addEventListener("focus", markRead);
+api("/api/me")
+  .then((result) => start(result.user))
+  .catch(() => {});
+// Conversation and message tools use real server state, not mock menus.
+const toolsDialog = el("dialog");
+toolsDialog.id = "tools-dialog";
+document.body.append(toolsDialog);
+function showTools(title, point) {
+  toolsDialog.replaceChildren();
+  toolsDialog.classList.toggle("context-tools", !!point);
+  if (point) {
+    toolsDialog.style.left =
+      Math.max(8, Math.min(point.x, innerWidth - 268)) + "px";
+    toolsDialog.style.top =
+      Math.max(8, Math.min(point.y, innerHeight - 410)) + "px";
+  } else {
+    toolsDialog.style.left = "";
+    toolsDialog.style.top = "";
+  }
+  const header = el("header"),
+    close = el("button", "icon-button", "×");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close tools");
+  close.addEventListener("click", () => toolsDialog.close());
+  header.append(el("h2", "", title), close);
+  toolsDialog.append(header);
+  if (!toolsDialog.open) toolsDialog.showModal();
+  return toolsDialog;
+}
+function toolButton(container, label, action, danger = false) {
+  const b = el("button", "tool-row" + (danger ? " tool-danger" : ""), label);
+  b.type = "button";
+  b.addEventListener("click", async () => {
+    try {
+      await action();
+    } catch (e) {
+      toast(e.message);
+    }
+  });
+  container.append(b);
+  return b;
+}
+async function setPrefs(chat, key, value) {
+  await api(`/api/chats/${chat.id}/preferences`, {
+    method: "PATCH",
+    body: JSON.stringify({ [key]: value }),
+  });
+  toolsDialog.close();
+}
+function showChatMenu(chat, point) {
+  const box = showTools(chat.name, point);
+  toolButton(box, chat.prefs?.pinned ? "Unpin chat" : "Pin chat", () =>
+    setPrefs(chat, "pinned", !chat.prefs?.pinned),
+  );
+  toolButton(
+    box,
+    chat.prefs?.muted ? "Unmute notifications" : "Mute notifications",
+    () => setPrefs(chat, "muted", !chat.prefs?.muted),
+  );
+  toolButton(
+    box,
+    chat.prefs?.archived ? "Unarchive chat" : "Archive chat",
+    () => setPrefs(chat, "archived", !chat.prefs?.archived),
+  );
+}
+function showMessageMenu(m, point) {
+  const box = showTools("Message", point);
+  if (!m.deletedAt) {
+    if (m.text)
+      toolButton(box, "Copy text", async () => {
+        await navigator.clipboard.writeText(m.text);
+        toolsDialog.close();
+        toast("Message copied.");
+      });
+    toolButton(box, "Reply", () => {
+      toolsDialog.close();
+      setReply(m);
+    });
+    toolButton(box, m.starred ? "Unstar message" : "Star message", async () => {
+      await api(`/api/messages/${m.id}/star`, {
+        method: "POST",
+        body: JSON.stringify({ starred: !m.starred }),
+      });
+      m.starred = !m.starred;
+      renderMessages();
+      toolsDialog.close();
+    });
+    toolButton(box, "Forward", () => {
+      const list = showTools("Forward to");
+      for (const c of chats.values())
+        toolButton(list, c.name, async () => {
+          await api(`/api/messages/${m.id}/forward`, {
+            method: "POST",
+            body: JSON.stringify({ chatId: c.id }),
+          });
+          toolsDialog.close();
+          toast("Message forwarded.");
+        });
+    });
+  }
+  if (m.senderId === me.id)
+    toolButton(box, "Message info", async () => {
+      const result = await api(`/api/messages/${m.id}/info`),
+        info = showTools("Message info");
+      info.append(
+        el(
+          "p",
+          "info-note",
+          "Sent " + new Date(result.createdAt).toLocaleString(),
+        ),
+      );
+      for (const u of active().members.filter((u) => u.id !== me.id)) {
+        const r = result.receipts.find((r) => r.user_id === u.id);
+        info.append(
+          el(
+            "p",
+            "info-note",
+            `${u.name}\nDelivered: ${r?.delivered_at ? new Date(r.delivered_at).toLocaleString() : "Not yet"}\nRead: ${r?.read_at ? new Date(r.read_at).toLocaleString() : "Not yet"}`,
+          ),
+        );
+      }
+    });
+  toolButton(
+    box,
+    "Delete for me",
+    async () => {
+      await api(`/api/messages/${m.id}`, { method: "DELETE", body: "{}" });
+      messages = messages.filter((x) => x.id !== m.id);
+      renderMessages();
+      toolsDialog.close();
+    },
+    true,
+  );
+  if (m.senderId === me.id && !m.deletedAt)
+    toolButton(
+      box,
+      "Delete for everyone",
+      async () => {
+        if (!confirm("Delete this message for everyone?")) return;
+        await api(`/api/messages/${m.id}`, {
+          method: "DELETE",
+          body: JSON.stringify({ everyone: true }),
+        });
+        toolsDialog.close();
+      },
+      true,
+    );
+}
+const archived = el("button", "", "Archived");
+archived.type = "button";
+archived.dataset.filter = "archived";
+archived.addEventListener("click", () => {
+  filter = "archived";
+  document
+    .querySelectorAll("[data-filter]")
+    .forEach((b) => b.classList.toggle("active", b === archived));
+  renderChats();
+});
+document.querySelector(".filters").append(archived);
+const optionsButton = el("button", "icon-button", "⋮");
+optionsButton.type = "button";
+optionsButton.setAttribute("aria-label", "Chat options");
+optionsButton.addEventListener("click", () => showChatMenu(active()));
+document.querySelector(".chat-header").append(optionsButton);
+let below = 0;
+const bottomButton = el("button", "scroll-bottom", "⌄");
+bottomButton.type = "button";
+bottomButton.setAttribute("aria-label", "Scroll to latest messages");
+bottomButton.hidden = true;
+document.querySelector(".conversation").append(bottomButton);
+bottomButton.addEventListener("click", () => {
+  $("chat-body").scrollTop = $("chat-body").scrollHeight;
+  below = 0;
+  markRead();
+});
+$("chat-body").addEventListener("scroll", () => {
+  const b = $("chat-body"),
+    away = b.scrollHeight - b.scrollTop - b.clientHeight > 150;
+  bottomButton.hidden = !away;
+  if (!away) {
+    below = 0;
+    bottomButton.textContent = "⌄";
+    markRead();
+  }
+});
+function appendRenderedMessage(m, force = false) {
+  if ([...$("messages").children].some((n) => n.dataset.messageId === m.id))
+    return;
+  const body = $("chat-body"),
+    near = body.scrollHeight - body.scrollTop - body.clientHeight < 100;
+  const date = new Date(m.createdAt).toLocaleDateString([], {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    last = [...$("messages").querySelectorAll(".day-divider")].at(-1);
+  if (last?.textContent !== date)
+    $("messages").append(el("li", "day-divider", date));
+  $("messages").append(buildMessage(m));
+  if (force || near) body.scrollTop = body.scrollHeight;
+  else {
+    below++;
+    bottomButton.textContent = below + " ⌄";
+    bottomButton.hidden = false;
+  }
+  searchMessages();
+}
+const statusButton = el("button", "icon-button", "◉");
+statusButton.type = "button";
+statusButton.setAttribute("aria-label", "Status updates");
+statusButton.title = "Status updates";
+statusButton.addEventListener("click", showStatuses);
+document.querySelector(".sidebar-header>div").prepend(statusButton);
+async function showStatuses() {
+  const result = await api("/api/stories"),
+    box = showTools("Status updates");
+  toolButton(box, "＋ Add a text status", () => {
+    const form = showTools("New text status"),
+      input = el("textarea", "status-input");
+    input.maxLength = 500;
+    input.placeholder = "Type a status...";
+    input.setAttribute("aria-label", "Status text");
+    const select = el("select");
+    select.setAttribute("aria-label", "Status color");
+    ["Green", "Blue", "Purple", "Brown", "Slate"].forEach((name, i) => {
+      const option = el("option", "", name);
+      option.value = i;
+      select.append(option);
+    });
+    form.append(input, select);
+    toolButton(form, "Share for 24 hours", async () => {
+      await api("/api/stories", {
+        method: "POST",
+        body: JSON.stringify({
+          text: input.value,
+          color: Number(select.value),
+        }),
+      });
+      await showStatuses();
+    });
+  });
+  box.append(
+    el(
+      "p",
+      "info-note",
+      "Visible to people who share a conversation with you. Text statuses expire after 24 hours.",
+    ),
+  );
+  for (const story of result.stories) {
+    toolButton(box, story.name + " · " + clock(story.created_at), () => {
+      const view = showTools(story.name),
+        card = el("div", "story-card story-color-" + story.color, story.text);
+      view.append(card);
+      view.append(
+        el("p", "info-note", new Date(story.created_at).toLocaleString()),
+      );
+      if (story.user_id === me.id)
+        toolButton(
+          view,
+          "Delete my status",
+          async () => {
+            await api("/api/stories/" + story.id, {
+              method: "DELETE",
+              body: "{}",
+            });
+            await showStatuses();
+          },
+          true,
+        );
+    });
+  }
+  if (!result.stories.length)
+    box.append(el("p", "info-note", "No recent status updates."));
+}
+function notificationsEnabled() {
+  try {
+    return localStorage.getItem("chat-notifications-" + me?.id) === "yes";
+  } catch {
+    return false;
+  }
+}
+const originalAccount = showAccount;
+showAccount = function () {
+  originalAccount();
+  const box = $("account-info");
+  toolButton(box, "Edit profile", () => {
+    const form = showTools("Edit profile"),
+      name = el("input"),
+      about = el("input");
+    name.value = me.name;
+    name.maxLength = 40;
+    name.setAttribute("aria-label", "Display name");
+    about.value = me.about || "";
+    about.maxLength = 140;
+    about.setAttribute("aria-label", "About");
+    form.append(
+      el("label", "", "Display name"),
+      name,
+      el("label", "", "About"),
+      about,
+    );
+    toolButton(form, "Save profile", async () => {
+      const result = await api("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ name: name.value, about: about.value }),
+      });
+      me = result.user;
+      $("self-avatar").textContent = me.name.slice(0, 2).toUpperCase();
+      toolsDialog.close();
+      $("account-dialog").close();
+      toast("Profile saved.");
+    });
+  });
+  toolButton(box, "Starred messages", async () => {
+    const result = await api("/api/starred"),
+      list = showTools("Starred messages");
+    for (const m of result.messages)
+      toolButton(list, m.senderName + ": " + preview(m), async () => {
+        toolsDialog.close();
+        $("account-dialog").close();
+        await openChat(m.chatId);
+      });
+    if (!result.messages.length)
+      list.append(
+        el(
+          "p",
+          "info-note",
+          "Star a message from its message menu to find it here.",
+        ),
+      );
+  });
+  toolButton(
+    box,
+    notificationsEnabled()
+      ? "Turn off desktop notifications"
+      : "Enable desktop notifications",
+    async () => {
+      if (!window.Notification) {
+        toast("Desktop notifications are not supported in this browser.");
+        return;
+      }
+      if (notificationsEnabled()) {
+        try {
+          localStorage.removeItem("chat-notifications-" + me.id);
+        } catch {}
+        toast("Desktop notifications off.");
+        return;
+      }
+      const result = await Notification.requestPermission();
+      if (result === "granted") {
+        try {
+          localStorage.setItem("chat-notifications-" + me.id, "yes");
+        } catch {}
+        toast("Desktop notifications on.");
+      } else
+        toast(
+          "Notifications were not allowed. You can change this in browser settings.",
+        );
+    },
+  );
+};
+// Existing button handlers use the current account function after the extensions load.
+$("account-button").removeEventListener("click", originalAccount);
+$("mobile-account").removeEventListener("click", originalAccount);
+$("account-button").addEventListener("click", () => showAccount());
+$("mobile-account").addEventListener("click", () => showAccount());
+const galleryButton = el("button", "icon-button", "▧");
+galleryButton.type = "button";
+galleryButton.setAttribute("aria-label", "Media gallery");
+galleryButton.title = "Media gallery";
+galleryButton.addEventListener("click", async () => {
+  try {
+    const result = await api(`/api/chats/${activeId}/media`),
+      box = showTools("Media, links and documents"),
+      grid = el("div", "media-gallery");
+    for (const m of result.messages) {
+      const a = m.attachment,
+        link = el("a", "gallery-item");
+      link.href = "/api/attachments/" + a.id;
+      link.target = "_blank";
+      link.rel = "noopener";
+      if (a.mime.startsWith("image/")) {
+        const img = el("img");
+        img.src = link.href;
+        img.alt = a.filename;
+        img.loading = "lazy";
+        link.append(img);
+      } else {
+        link.append(
+          el("span", "", a.mime.startsWith("audio/") ? "🎙" : "▤"),
+          el("small", "", a.filename),
+        );
+      }
+      grid.append(link);
+    }
+    box.append(grid);
+    if (!result.messages.length)
+      box.append(
+        el(
+          "p",
+          "info-note",
+          "Photos, videos, voice notes and documents shared here will appear here.",
+        ),
+      );
+  } catch (e) {
+    toast(e.message);
+  }
+});
+document
+  .querySelector(".chat-header")
+  .insertBefore(galleryButton, optionsButton);
+let waveContext = null,
+  waveFrame = 0;
+const wave = el("canvas", "recording-wave");
+wave.width = 200;
+wave.height = 32;
+wave.setAttribute("aria-label", "Live microphone waveform");
+$("recording-bar").insertBefore(wave, $("cancel-recording"));
+function startWaveform(stream) {
+  try {
+    const Audio = window.AudioContext || window.webkitAudioContext;
+    waveContext = new Audio();
+    const analyser = waveContext.createAnalyser();
+    analyser.fftSize = 256;
+    waveContext.createMediaStreamSource(stream).connect(analyser);
+    const data = new Uint8Array(analyser.fftSize),
+      ctx = wave.getContext("2d");
+    function draw() {
+      analyser.getByteTimeDomainData(data);
+      ctx.clearRect(0, 0, 200, 32);
+      ctx.strokeStyle = "#00a884";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      data.forEach((v, i) => {
+        const x = (i * 200) / data.length,
+          y = (v / 128) * 16;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+      waveFrame = requestAnimationFrame(draw);
+    }
+    draw();
+  } catch {}
+}
+function stopWaveform() {
+  cancelAnimationFrame(waveFrame);
+  waveContext?.close().catch(() => {});
+  waveContext = null;
+}
+function lineIcon(paths) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  for (const d of paths) {
+    const p = document.createElementNS(svg.namespaceURI, "path");
+    p.setAttribute("d", d);
+    svg.append(p);
+  }
+  return svg;
+}
+galleryButton.replaceChildren(
+  lineIcon(["M3 3h18v18H3z", "m3 16 5-5 4 4 3-3 6 6", "M8 7h.01"]),
+);
+statusButton.replaceChildren(
+  lineIcon([
+    "M12 3a9 9 0 0 1 8.5 6",
+    "M21 13a9 9 0 0 1-8 8",
+    "M8 20a9 9 0 0 1-5-7",
+    "M3.5 8A9 9 0 0 1 8 3.5",
+  ]),
+);
+const baseAvatar = avatar;
+avatar = function (name, group = false) {
+  const a = baseAvatar(name, group);
+  if (group)
+    a.replaceChildren(
+      lineIcon([
+        "M8 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6",
+        "M17 11a2.5 2.5 0 1 0 0-5",
+        "M2 20v-2a6 6 0 0 1 12 0v2",
+        "M16 14a5 5 0 0 1 6 5v1",
+      ]),
+    );
+  return a;
+};
+let longPress;
+$("messages").addEventListener(
+  "touchstart",
+  (event) => {
+    clearTimeout(longPress);
+    const node = event.target.closest(".message");
+    if (!node || event.target.closest("audio,video,a,button")) return;
+    const message = messages.find((m) => m.id === node.dataset.messageId);
+    longPress = setTimeout(() => {
+      if (message) showMessageMenu(message);
+    }, 550);
+  },
+  { passive: true },
+);
+for (const type of ["touchend", "touchmove", "touchcancel"])
+  $("messages").addEventListener(type, () => clearTimeout(longPress), {
+    passive: true,
+  });
+function userAvatar(user) {
+  const node = avatar(user.name);
+  if (user.hasAvatar) {
+    const image = el("img");
+    image.alt = "";
+    image.src = "/api/users/" + user.id + "/avatar?v=" + Date.now();
+    node.replaceChildren(image);
+  }
+  return node;
+}
+function chatAvatar(chat) {
+  const other = chat.members.find((u) => u.id !== me.id);
+  return chat.kind === "group"
+    ? avatar(chat.name, true)
+    : other
+      ? userAvatar(other)
+      : avatar(chat.name);
+}
+const avatarUpload = el("input");
+avatarUpload.id = "avatar-upload";
+avatarUpload.type = "file";
+avatarUpload.accept = "image/png,image/jpeg,image/webp";
+avatarUpload.hidden = true;
+document.body.append(avatarUpload);
+avatarUpload.addEventListener("change", async () => {
+  const file = avatarUpload.files[0];
+  if (!file) return;
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const result = await api("/api/profile/avatar", {
+      method: "POST",
+      body: form,
+    });
+    me = result.user;
+    toast("Profile picture updated.");
+    $("account-dialog").close();
+    showAccount();
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    avatarUpload.value = "";
+  }
+});
+const accountWithSettings = showAccount;
+showAccount = function () {
+  accountWithSettings();
+  const box = $("account-info");
+  toolButton(box, "Change profile picture", () => avatarUpload.click());
+  if (me.hasAvatar)
+    toolButton(box, "Remove profile picture", async () => {
+      const result = await api("/api/profile/avatar", {
+        method: "DELETE",
+        body: "{}",
+      });
+      me = result.user;
+      $("account-dialog").close();
+      showAccount();
+    });
+};
+function persistDrafts() {
+  if (!me) return;
+  try {
+    localStorage.setItem(
+      "chat-drafts-" + me.id,
+      JSON.stringify([...drafts].filter(([, text]) => text).slice(-100)),
+    );
+  } catch {}
+}
+function appendLinkedText(container, text) {
+  const pattern = /https?:\/\/[^\s<>]+/gi;
+  let index = 0;
+  for (const match of text.matchAll(pattern)) {
+    container.append(document.createTextNode(text.slice(index, match.index)));
+    let url = match[0],
+      trailing = "";
+    while (/[.,!?;)]$/.test(url)) {
+      trailing = url.slice(-1) + trailing;
+      url = url.slice(0, -1);
+    }
+    try {
+      const parsed = new URL(url);
+      const link = el("a", "message-link", url);
+      link.href = parsed.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      container.append(link, document.createTextNode(trailing));
+    } catch {
+      container.append(document.createTextNode(match[0]));
+    }
+    index = match.index + match[0].length;
+  }
+  container.append(document.createTextNode(text.slice(index)));
+}
+const allSearchButton = el("button", "search-all-button", "Search all history");
+allSearchButton.type = "button";
+allSearchButton.addEventListener("click", async () => {
+  const id = activeId,
+    q = $("message-search").value;
+  try {
+    const result = await api(
+      `/api/chats/${id}/search?q=${encodeURIComponent(q)}`,
+    );
+    if (id !== activeId) return;
+    const box = showTools("Search results");
+    box.append(
+      el("p", "info-note", result.messages.length + " matches (up to 100)."),
+    );
+    for (const m of result.messages)
+      toolButton(
+        box,
+        m.senderName + " · " + clock(m.createdAt) + "\n" + preview(m),
+        () => {
+          const detail = showTools("Message from " + m.senderName);
+          detail.append(
+            el("p", "info-note", new Date(m.createdAt).toLocaleString()),
+            buildMessage(m),
+          );
+        },
+      );
+  } catch (e) {
+    toast(e.message);
+  }
+});
+$("message-search-bar").insertBefore(
+  allSearchButton,
+  $("close-message-search"),
+);
+window.addEventListener("keydown", (event) => {
+  if (event.ctrlKey || event.metaKey) {
+    if (event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      if (!$("app").hidden) {
+        $("app").classList.remove("chat-open");
+        $("chat-search").focus();
+      }
+    }
+    if (event.shiftKey && event.key.toLowerCase() === "f" && activeId) {
+      event.preventDefault();
+      $("message-search-bar").hidden = false;
+      $("message-search").focus();
+    }
+    if (
+      event.altKey &&
+      event.key.toLowerCase() === "n" &&
+      me &&
+      !document.querySelector("dialog[open]")
+    ) {
+      event.preventDefault();
+      showContacts();
+    }
+  }
+  if (event.key === "Escape" && !document.querySelector("dialog[open]")) {
+    if (!$("emoji-picker").hidden) $("emoji-picker").hidden = true;
+    else if (reply) clearReply();
+    else if (!$("message-search-bar").hidden) $("close-message-search").click();
+    else if (innerWidth <= 640) $("app").classList.remove("chat-open");
+  }
+});
+window.addEventListener("beforeunload", () => {
+  persistDrafts();
+  if (recorder) stopRecording(true);
+});

@@ -1,61 +1,139 @@
-# Real-Time Chat (WhatsApp-style)
+<div align="center">
 
-[![buymeachai](https://img.shields.io/badge/buymeachai-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeachai.in/mananbharti)
+# Real-Time Chat
 
-A responsive, real-time **guest-room chat demo** using Express and Socket.IO. The interface uses the working name "Gather".
+### Familiar conversations. Built from the ground up.
 
-## Run locally
+A WhatsApp-style messaging app with real accounts, persistent chats, voice notes and a carefully built dark interface.
 
-Requires Node.js 20 or later (CI uses Node 22).
+**Node.js 22+** · **Express** · **Socket.IO** · **SQLite** · **Vanilla JavaScript**
+
+[Get started](#get-started) · [Features](#features) · [Screenshots](#screenshots) · [Tests](#tests) · [Architecture](#architecture) · [Project status](#project-status)
+
+</div>
+
+![Desktop group conversation with quote replies and real read receipts](docs/screenshots/desktop.png)
+
+> Independent project. Not affiliated with WhatsApp or Meta. This app does not connect to WhatsApp and does not provide end-to-end encryption.
+
+## Get started
+
+**Requirements:** Node.js 22.13 or later and npm. No API keys or external database needed.
 
 ```bash
+git clone https://github.com/mananbharti/Real-Time-Chat-website-like-Whatsapp.git
+cd Real-Time-Chat-website-like-Whatsapp
 npm ci
 npm start
 ```
 
-Open http://localhost:3000 in two separate browser windows. Enter a name and the same room name in both, then send messages. Use different room names to keep their messages separate. `PORT=4000 npm start` changes the listening port.
+Open **http://localhost:3000**. Create an account, then use **New chat** to talk to another registered account or create a group.
 
-## What works
+To try both sides of a conversation, open a second browser profile or an incognito window. Ordinary tabs share the same login.
 
-- Named public rooms with room links, per-room messages and online members.
-- Real-time messages and typing indicators, with server timestamps and send acknowledgements.
-- The last 100 messages in each room are restored when joining or reconnecting.
-- Responsive desktop/mobile interface, multiline messages and keyboard controls.
-- Drafts survive a temporary connection loss while the page stays open. The composer is disabled offline, so messages are not silently queued.
-- Safe text rendering, payload validation, per-connection burst limits and a dedicated public asset directory.
-- Server-generated message IDs and sender names bound to the joined guest session, rather than trusted from individual message payloads.
+## Features
 
-**Enter** sends a message. **Shift + Enter** inserts a line break. The arrow-switch button changes your guest name or room. "Sent" means the server accepted a message, not that someone read it.
+| Conversations              | Messages                             | The details                       |
+| -------------------------- | ------------------------------------ | --------------------------------- |
+| Direct and group chats     | Text, photos, audio, video and PDFs  | Dark and light themes             |
+| Persistent SQLite history  | Record, preview and send voice notes | Responsive mobile navigation      |
+| Delivery and read receipts | Quote replies, forwarding and stars  | Per-chat drafts across reloads    |
+| Online and last seen       | Delete for yourself or everyone      | Pin, mute and archive             |
+| Typing and unread counts   | Emoji and safe clickable links       | Right-click and touch menus       |
+| Full-history search        | Shared-media gallery                 | Profile pictures and about lines  |
+| Membership-checked access  | Idempotent message retries           | Text statuses with 24-hour expiry |
 
-## Privacy and limits
+**The ticks are real.** One tick means the server stored a message. Gray double ticks mean every other member's client acknowledged delivery. Blue double ticks mean every other member acknowledged reading. Message info shows the recorded delivery/read times.
 
-This is not a production messenger or a WhatsApp integration. There are **no authenticated accounts, private rooms, encryption between participants, read receipts, file uploads or persistent database**. Guest names are not verified and can be reused by anyone. Anyone who knows or guesses a room name can read its recent messages. Do not use it for sensitive information.
+**The recorder is real.** Voice notes use the browser microphone, show a live waveform, can be previewed before sending, and play on the receiving client. Microphone access requires HTTPS or localhost.
 
-History lives only in server memory: up to 100 rooms, each with up to 100 messages. On reaching the room limit, an inactive room is evicted to make space; if all rooms are active, new room creation is refused. All history is cleared by a server restart. Browser session storage remembers the guest name, room and IDs of your recently sent messages, not their contents. Drafts are not saved across reloads. An acknowledgement timeout keeps your draft and reports that delivery is uncertain; check the conversation before manually resending.
+## Screenshots
 
-Limits (per socket, not per account or IP): 1-24 characters for guest names, 1-32 lowercase letters/numbers/hyphens for room names, 1-2000 characters per message, 10 accepted messages per 5 seconds and 15 join attempts per 10 seconds. This is basic demo hardening, not protection from a sustained attack. Use one server process; a shared history store and adapter would be needed for multiple instances. Deployment needs HTTPS/WSS, proper authentication/access controls and deployment-level abuse protection before opening it to untrusted traffic.
+These captures are from the running app with local test accounts, not static mockups or real private conversations.
+
+<table>
+<tr>
+<td align="center"><strong>Conversation</strong></td>
+<td align="center"><strong>Chat list</strong></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/mobile.png" alt="Mobile group conversation with replies and blue read ticks" width="310"></td>
+<td><img src="docs/screenshots/mobile-list.png" alt="Mobile chat list with search, filters and recent messages" width="310"></td>
+</tr>
+</table>
+
+## Architecture
+
+```text
+Browser UI                  Express + Socket.IO                Local storage
+──────────                  ───────────────────                ─────────────
+HTML / CSS / JavaScript  ↔  Authenticated HTTP + sockets  ↔  SQLite accounts & messages
+MediaRecorder + audio       Chat membership checks           Protected upload files
+Local per-chat drafts       Validation + basic rate limits   Persistent sessions
+```
+
+```text
+public/                Client interface, styles and behavior
+server.js              HTTP API, socket events, authentication and database
+ tests/
+  server.test.js       API, persistence, authorization and upload checks
+  browser/chat.spec.js Real multi-client browser flows
+docs/                  Screenshots and technical notes
+data/                  Database and uploads (created locally, ignored by Git)
+```
+
+The app uses one Node process and no paid services. Database and uploaded files are kept in `data/`; back up that directory to preserve them. Passwords use salted scrypt hashes. Sessions use HttpOnly/SameSite cookies and are revoked on logout.
 
 ## Tests
 
 ```bash
-npm test                         # HTTP + real Socket.IO integration tests
-npx playwright install chromium # one-time browser download
-npm run test:e2e                  # real browser tests
-npm run test:all
+npm test                         # Integration tests
+npx playwright install chromium # One-time browser installation
+npm run test:e2e                  # Browser tests
+npm run test:all                  # Both suites
 ```
 
-For a system Chrome installation, set `CHROME_PATH=/absolute/path/to/chrome` when running the browser tests. The test server starts automatically on port 3100. Tests cover two participants chatting, room isolation and switching, typing/presence, history after refresh, literal HTML rendering, mobile layout, multiline input, offline/reconnect draft recovery, malformed payloads, source-file exposure, history bounds and rate limits. CI installs Chromium and runs both suites on pull requests.
+The tests use isolated temporary databases. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, reconnect, mobile navigation, draft recovery, menus, statuses, links and shortcuts. CI runs both suites on Node 22.
 
-## Improvement process
+For a system browser, set `CHROME_PATH` to the Chrome executable. Node 22 may display an experimental warning for its built-in SQLite module.
 
-REA (`rea-agents` 6.5.0, [morluto/rea](https://github.com/morluto/rea)) was used for static analysis of the original application and a CDP inspection of the running improved app. REA is a reverse-engineering toolkit, not a standalone coding agent; implementation and browser/integration tests were done separately. No LLM API key or WhatsApp account was used. Browser checks reproduced the original missing stylesheet (HTTP 404) and message HTML injection before the fixes.
+## Configuration
 
-## Credits
+| Variable      | Default       | Purpose                                                |
+| ------------- | ------------- | ------------------------------------------------------ |
+| `PORT`        | `3000`        | HTTP listening port                                    |
+| `DATA_DIR`    | `<repo>/data` | Absolute database/upload directory                     |
+| `NODE_ENV`    | development   | Set to `production` for Secure cookies; requires HTTPS |
+| `TRUST_PROXY` | unset         | Set to `1` only behind one trusted reverse proxy       |
 
-If you reuse this code, please link back to [mananbharti](https://github.com/mananbharti).
+## Keyboard shortcuts
 
-## Author
+| Action                    | Shortcut                  |
+| ------------------------- | ------------------------- |
+| Find a conversation       | `Ctrl/Cmd + K`            |
+| Search messages           | `Ctrl/Cmd + Shift + F`    |
+| New chat                  | `Ctrl/Cmd + Alt + N`      |
+| Send / new line           | `Enter` / `Shift + Enter` |
+| Dismiss overlays or reply | `Escape`                  |
 
-**Manan Bharti** ([@mananbharti](https://github.com/mananbharti))
+Double-click a message or swipe right to reply. Right-click or touch-and-hold for message actions.
+
+## Project status
+
+This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, group-admin controls, blocking/reporting, reactions, stickers, polls, message edits and photo/video stories are not implemented. Statuses are text-only. Link cards show the URL host/path, not fetched thumbnails or page metadata.
+
+Messages and media are readable by the server operator. The app needs HTTPS, registration/abuse policies, storage limits, retention/backup plans and a security review before public deployment. Use a single server process unless you add a shared Socket.IO adapter and storage. Real-device testing is still needed beyond Chrome's mobile viewport tests.
+
+See [technical notes](docs/TECHNICAL-NOTES.md) for precise behavior, limits, deployment guidance and the REA analysis record.
+
+## Development approach
+
+[REA](https://github.com/morluto/rea) was used for source analysis and inspection of the running application. Implementation was verified separately with integration and real-browser tests. No WhatsApp source code, credentials or private conversations are included in this repository.
+
+## Author & license
+
+Built for [Manan Bharti](https://github.com/mananbharti). If you reuse the project, please link back to the original repository.
+
+See [LICENSE](LICENSE) for the repository's license.
 
 [![buymeachai](https://img.shields.io/badge/buymeachai-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black)](https://buymeachai.in/mananbharti)

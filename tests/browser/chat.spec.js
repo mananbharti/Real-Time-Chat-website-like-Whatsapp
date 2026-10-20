@@ -1,60 +1,306 @@
-const { test, expect } = require('@playwright/test');
-async function join(page, name, room) {
-  await page.goto('/');
-  await expect(page.locator('#connection-status')).toContainText('Connected');
-  await page.getByLabel('Your name', { exact: true }).fill(name);
-  await page.getByLabel('Room name', { exact: true }).fill(room);
-  await page.getByRole('button', { name: 'Join the conversation' }).click();
-  await expect(page.locator('#join-dialog')).not.toBeVisible();
+const { test, expect } = require("@playwright/test");
+const fs = require("node:fs");
+const stamp = () =>
+  Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+async function register(page, name, handle) {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "New here? Create an account" })
+    .click();
+  await page.getByLabel("Username", { exact: true }).fill(handle);
+  await page.getByLabel("Your name", { exact: true }).fill(name);
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("Browser-test-password-123");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.locator("#app")).toBeVisible();
+  await expect(page.locator("#connection-status")).toHaveText("Connected");
 }
-async function send(page, text) { await page.getByLabel('Message', { exact: true }).fill(text); await page.getByRole('button', { name: 'Send message', exact: true }).click(); await expect(page.getByLabel('Message', { exact: true })).toHaveValue(''); }
+async function direct(page, name) {
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator(".contact").filter({ hasText: name }).click();
+  await expect(page.locator("#chat-title")).toHaveText(name);
+}
+async function send(page, text) {
+  await page.getByLabel("Message", { exact: true }).fill(text);
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByLabel("Message", { exact: true })).toHaveValue("");
+}
+async function openFromList(page, name) {
+  await page.locator(".chat-item").filter({ hasText: name }).click();
+  await expect(page.locator("#chat-title")).toHaveText(name);
+}
 
-test('two people chat, see typing, isolate rooms, restore history and safely render HTML', async ({ browser }) => {
-  const a = await browser.newPage(); const b = await browser.newPage();
-  const room = `studio-${Date.now()}`;
-  await join(a, 'Manan', room); await join(b, 'Alex', room);
-  await expect(a.locator('#connection-status')).toContainText('2 people online');
-  await b.getByLabel('Message', { exact: true }).fill('Hey Manan!');
-  await expect(a.locator('#typing')).toContainText('Alex is typing');
-  await b.getByRole('button', { name: 'Send message', exact: true }).click();
-  await expect(a.locator('.message-text')).toHaveText(['Hey Manan!']);
-  await send(a, 'Hey! The room is working.');
-  await expect(b.locator('.message-text')).toHaveText(['Hey Manan!', 'Hey! The room is working.']);
-  const attack = '<img src=x onerror="window.xss=true">';
-  await send(a, attack);
-  await expect(b.locator('.message-text').last()).toHaveText(attack);
+test("authenticated direct/group chat, read receipts, reply, image, safe text, refresh and mobile navigation", async ({
+  browser,
+}) => {
+  const contexts = await Promise.all([
+    browser.newContext(),
+    browser.newContext(),
+    browser.newContext(),
+  ]);
+  const [a, b, c] = await Promise.all(contexts.map((c) => c.newPage()));
+  const id = stamp();
+  const errors = [];
+  for (const p of [a, b, c]) p.on("pageerror", (e) => errors.push(e.message));
+  await register(a, "Manan", "manan_" + id);
+  await register(b, "Alex", "alex_" + id);
+  await register(c, "Priya", "priya_" + id);
+  await direct(a, "Alex");
+  await send(a, "Hey Alex! This is a real conversation.");
+  await expect(b.locator(".chat-item")).toHaveCount(1);
+  await expect(b.locator(".unread-badge")).toHaveText("1");
+  await openFromList(b, "Manan");
+  await expect(b.locator(".message-text")).toHaveText(
+    "Hey Alex! This is a real conversation.",
+  );
+  await expect(a.locator(".message .ticks")).toHaveAttribute(
+    "aria-label",
+    "Read by all",
+  );
+  await b.getByLabel("Message", { exact: true }).fill("Typing here");
+  await expect(a.locator("#chat-subtitle")).toContainText("typing");
+  await send(b, "Hey! It works both ways.");
+  await expect(a.locator(".message-text").last()).toHaveText(
+    "Hey! It works both ways.",
+  );
+  await a
+    .locator(".message")
+    .last()
+    .getByRole("button", { name: "Reply to message" })
+    .click();
+  await send(a, "Yes, including replies.");
+  await expect(b.locator(".reply-quote")).toContainText(
+    "Hey! It works both ways.",
+  );
+  await send(a, '<img src=x onerror="window.xss=true">');
+  await expect(b.locator(".message-text").last()).toHaveText(
+    '<img src=x onerror="window.xss=true">',
+  );
   expect(await b.evaluate(() => window.xss)).toBeUndefined();
-  await expect(b.locator('#messages img')).toHaveCount(0);
+  await expect(b.locator("#messages img")).toHaveCount(0);
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf4UAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await a.locator("#file-input").setInputFiles({
+    name: "test-photo.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await expect(a.locator("#attachment-name")).toContainText("ready to send");
+  await a.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(b.locator(".attachment-image")).toBeVisible();
+  await expect
+    .poll(() => b.locator(".attachment-image").evaluate((i) => i.naturalWidth))
+    .toBeGreaterThan(0);
   await b.reload();
-  await expect(b.locator('#messages .message')).toHaveCount(3);
-  await expect(b.locator('.mine .message-text')).toHaveText('Hey Manan!');
-  await b.getByRole('button', { name: 'Change name or room' }).click();
-  await b.getByLabel('Room name', { exact: true }).fill('another-' + Date.now());
-  await b.getByRole('button', { name: 'Join the conversation' }).click();
-  await expect(b.locator('#messages .message')).toHaveCount(0);
-  await send(a, 'Only our original room gets this.');
-  await expect(a.locator('#messages .message')).toHaveCount(4);
-  await expect(b.locator('#messages .message')).toHaveCount(0);
-  await a.close(); await b.close();
+  await expect(b.locator("#connection-status")).toHaveText("Connected");
+  await openFromList(b, "Manan");
+  await expect(b.locator(".message")).toHaveCount(5);
+  await a.getByRole("button", { name: "New chat", exact: true }).click();
+  await a.getByRole("button", { name: "New group", exact: true }).click();
+  await a.getByLabel("Group name", { exact: true }).fill("Weekend plans");
+  await a.locator(".contact").filter({ hasText: "Alex" }).click();
+  await a.locator(".contact").filter({ hasText: "Priya" }).click();
+  await a.getByRole("button", { name: "Create group", exact: true }).click();
+  await expect(a.locator("#chat-title")).toHaveText("Weekend plans");
+  await send(a, "Group chat is ready.");
+  await openFromList(c, "Weekend plans");
+  await expect(c.locator(".message-text")).toHaveText("Group chat is ready.");
+  await send(c, "Saturday at 10?");
+  await expect(a.locator(".message-author")).toHaveText("Priya");
+  await a.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBe(true);
+  await expect(a.locator("#back")).toBeVisible();
+  await a.getByRole("button", { name: "Back to chats" }).click();
+  await expect(a.locator(".sidebar")).toBeVisible();
+  await openFromList(a, "Weekend plans");
+  await expect(a.locator(".message")).toHaveCount(2);
+  expect(errors).toEqual([]);
+  for (const context of contexts) await context.close();
 });
 
-test('responsive mobile, multiline keyboard entry, empty guard and reconnect with a saved draft', async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
-  const page = await context.newPage();
-  await join(page, 'Taylor', `mobile-${Date.now()}`);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(page.getByRole('button', { name: 'Send message', exact: true })).toBeDisabled();
-  const input = page.getByLabel('Message', { exact: true });
-  await input.fill('First line'); await input.press('Shift+Enter'); await input.press('a');
-  await input.press('Enter'); await expect(page.locator('.message-text')).toHaveText('First line\na');
-  await input.fill('My unfinished draft');
-  await context.setOffline(true);
-  await expect(input).toBeDisabled({ timeout: 25000 });
-  await context.setOffline(false);
-  await expect(input).toBeEnabled({ timeout: 20000 });
-  await expect(input).toHaveValue('My unfinished draft');
-  await expect(page.locator('#messages .message')).toHaveCount(1);
-  await send(page, 'My unfinished draft');
-  await expect(page.locator('#messages .message')).toHaveCount(2);
-  await context.close();
+test("voice recording produces an actual playable attachment, emoji, reconnect and draft retention", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext({ permissions: ["microphone"] }),
+    bc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage(),
+    id = stamp();
+  await register(a, "Taylor", "taylor_" + id);
+  await register(b, "Jordan", "jordan_" + id);
+  await direct(a, "Jordan");
+  await a
+    .getByRole("button", { name: "Record voice note", exact: true })
+    .click();
+  await expect(a.locator("#recording-bar")).toBeVisible();
+  await expect(a.locator("#recording-time")).not.toHaveText("0:00");
+  await a.getByRole("button", { name: "Stop & preview" }).click();
+  await expect(a.locator("#attachment-name")).toContainText("ready to send");
+  await expect(a.getByLabel("Voice note preview")).toBeVisible();
+  await a.getByRole("button", { name: "Send message", exact: true }).click();
+  await openFromList(b, "Taylor");
+  await expect(b.locator("#messages audio")).toBeVisible();
+  await expect
+    .poll(() => b.locator("#messages audio").evaluate((a) => a.readyState))
+    .toBeGreaterThan(0);
+  await b.locator("#messages audio").evaluate((a) => a.play());
+  await expect
+    .poll(() => b.locator("#messages audio").evaluate((a) => a.currentTime))
+    .toBeGreaterThan(0);
+  await a.getByRole("button", { name: "Choose emoji" }).click();
+  await a.getByRole("button", { name: "Insert 👍", exact: true }).click();
+  await a.getByLabel("Message", { exact: true }).press("Enter");
+  await expect(b.locator(".message-text")).toHaveText("👍");
+  await a.getByLabel("Message", { exact: true }).fill("Unfinished draft");
+  await ac.setOffline(true);
+  await expect(a.getByLabel("Message", { exact: true })).toBeDisabled({
+    timeout: 25000,
+  });
+  await ac.setOffline(false);
+  await expect(a.getByLabel("Message", { exact: true })).toBeEnabled({
+    timeout: 20000,
+  });
+  await expect(a.getByLabel("Message", { exact: true })).toHaveValue(
+    "Unfinished draft",
+  );
+  await send(a, "Unfinished draft");
+  await expect(b.locator(".message-text").last()).toHaveText(
+    "Unfinished draft",
+  );
+  await ac.close();
+  await bc.close();
+});
+
+test("chat pin/mute/archive, message star/forward/delete/info, status and profile edits are functional", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext(),
+    bc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage(),
+    id = stamp();
+  await register(a, "Morgan", "morgan_" + id);
+  await register(b, "Riley", "riley_" + id);
+  await direct(a, "Riley");
+  await send(a, "A message to manage");
+  await openFromList(b, "Morgan");
+  await a
+    .locator(".message")
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  await a.getByRole("button", { name: "Star message", exact: true }).click();
+  await expect(a.locator(".star-indicator")).toHaveText("★");
+  await a
+    .locator(".message")
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  await a.getByRole("button", { name: "Message info", exact: true }).click();
+  await expect(a.locator("#tools-dialog")).toContainText("Read:");
+  await a.getByRole("button", { name: "Close tools" }).click();
+  await a.getByRole("button", { name: "Chat options", exact: true }).click();
+  await a.getByRole("button", { name: "Pin chat", exact: true }).click();
+  await expect(a.locator(".chat-pref-icon")).toContainText("⌖");
+  await a.getByRole("button", { name: "Chat options", exact: true }).click();
+  await a
+    .getByRole("button", { name: "Mute notifications", exact: true })
+    .click();
+  await a.getByRole("button", { name: "Chat options", exact: true }).click();
+  await a.getByRole("button", { name: "Archive chat", exact: true }).click();
+  await expect(a.locator(".chat-item")).toHaveCount(0);
+  await a.getByRole("button", { name: "Archived", exact: true }).click();
+  await expect(a.locator(".chat-item")).toHaveCount(1);
+  await a
+    .locator(".message")
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  await a.getByRole("button", { name: "Forward", exact: true }).click();
+  await a
+    .locator("#tools-dialog")
+    .getByRole("button", { name: "Riley", exact: true })
+    .click();
+  await expect(b.locator(".forward-label")).toHaveText("↪ Forwarded");
+  await a
+    .locator(".message")
+    .first()
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  a.once("dialog", (d) => d.accept());
+  await a
+    .getByRole("button", { name: "Delete for everyone", exact: true })
+    .click();
+  await expect(b.locator(".deleted-message")).toHaveText(
+    "⊘ This message was deleted",
+  );
+  await a.getByRole("button", { name: "Status updates", exact: true }).click();
+  await a
+    .getByRole("button", { name: "＋ Add a text status", exact: true })
+    .click();
+  await a.getByLabel("Status text").fill("Out for a walk.");
+  await a
+    .getByRole("button", { name: "Share for 24 hours", exact: true })
+    .click();
+  await expect(a.locator("#tools-dialog")).toContainText("Morgan");
+  await a.getByRole("button", { name: "Close tools" }).click();
+  await a.getByRole("button", { name: "Account and sign out" }).click();
+  await a.getByRole("button", { name: "Edit profile", exact: true }).click();
+  await a.getByLabel("Display name", { exact: true }).fill("Morgan Updated");
+  await a.getByLabel("About", { exact: true }).fill("Coffee first.");
+  await a.getByRole("button", { name: "Save profile", exact: true }).click();
+  await a.getByRole("button", { name: "Account and sign out" }).click();
+  await expect(a.locator("#account-info")).toContainText("Morgan Updated");
+  await a.getByRole("button", { name: "Close account" }).click();
+  await ac.close();
+  await bc.close();
+});
+
+test("durable per-chat drafts, working safe links, full-history search and keyboard shortcuts", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext(),
+    bc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage(),
+    id = stamp();
+  await register(a, "Casey", "casey_" + id);
+  await register(b, "Sam", "sam_" + id);
+  await direct(a, "Sam");
+  await a
+    .getByLabel("Message", { exact: true })
+    .fill("Keep this draft after reload");
+  await a.reload();
+  await expect(a.locator("#connection-status")).toHaveText("Connected");
+  await openFromList(a, "Sam");
+  await expect(a.getByLabel("Message", { exact: true })).toHaveValue(
+    "Keep this draft after reload",
+  );
+  await send(a, "A useful link: https://example.com/hello");
+  await expect(a.locator(".message-link")).toHaveAttribute(
+    "href",
+    "https://example.com/hello",
+  );
+  await expect(a.locator(".link-card")).toContainText("example.com");
+  await a.keyboard.press("Control+Shift+F");
+  await expect(a.getByLabel("Search conversation")).toBeFocused();
+  await a.getByLabel("Search conversation").fill("useful");
+  await a
+    .getByRole("button", { name: "Search all history", exact: true })
+    .click();
+  await expect(a.locator("#tools-dialog")).toContainText("A useful link:");
+  await a.getByRole("button", { name: "Close tools" }).click();
+  await a
+    .locator(".message")
+    .dispatchEvent("contextmenu", { clientX: 400, clientY: 300 });
+  await expect(a.locator("#tools-dialog")).toHaveClass(/context-tools/);
+  await a.getByRole("button", { name: "Close tools" }).click();
+  await a.keyboard.press("Control+k");
+  await expect(a.getByLabel("Search chats")).toBeFocused();
+  await ac.close();
+  await bc.close();
 });

@@ -1,37 +1,419 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#126c5b">
-  <title>Gather - real-time chat</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/socket.io/socket.io.js" defer></script>
-  <script src="/app.js" defer></script>
-</head>
-<body>
-  <main class="app">
-    <aside class="sidebar" aria-label="Your rooms">
-      <a class="brand" href="/" aria-label="Gather home"><span class="brand-icon" aria-hidden="true">g.</span> gather<span class="brand-dot">●</span></a>
-      <div class="sidebar-heading"><h1>Your space,<br>in good company.</h1><p>Small rooms. Real conversations.</p></div>
-      <div class="section-label">YOUR ROOM <span>01</span></div>
-      <div class="room-card"><span class="room-icon" aria-hidden="true">#</span><div><strong id="sidebar-room">general</strong><span id="room-preview">Join to start a conversation</span></div><span class="room-dot" aria-hidden="true"></span></div>
-      <section class="people" aria-label="Online members"><div class="section-label">IN THE ROOM <span id="member-count">0</span></div><ul id="members"></ul></section>
-      <div class="sidebar-note"><span aria-hidden="true">↗</span><p>A link is all it takes.<br>Invite someone into your room.</p></div>
-      <footer><span class="small-dot"></span> A little closer, wherever you are.</footer>
-    </aside>
-    <section class="conversation" aria-label="Conversation">
-      <header class="chat-header"><div class="header-avatar" aria-hidden="true">#</div><div class="header-title"><div class="eyebrow">THE CONVERSATION</div><h2 id="room-title">general</h2><p id="connection-status" role="status">Connecting...</p></div><button id="invite" class="subtle-button" type="button" disabled>Copy room link <span aria-hidden="true">↗</span></button><button id="change-room" class="icon-button" type="button" aria-label="Change name or room">⇄</button></header>
-      <div class="chat-body" id="chat-body"><div class="day-divider"><span>RECENT CONVERSATION</span></div><div class="welcome" id="welcome"><div class="welcome-symbol" aria-hidden="true">✳</div><h3>Good conversations start here.</h3><p>Say hello. Share an idea. Make yourself at home.</p></div><ol id="messages" aria-label="Messages" aria-live="polite" aria-relevant="additions"></ol></div>
-      <div id="typing" role="status" class="typing"></div>
-      <div id="notice" role="alert" class="notice" hidden></div>
-      <form id="message-form" class="composer"><label for="message-input" class="sr-only">Message</label><textarea id="message-input" placeholder="Write a message..." maxlength="2000" rows="1" disabled></textarea><span id="character-count" aria-hidden="true">0/2000</span><button id="send" type="submit" aria-label="Send message" disabled><span aria-hidden="true">↑</span></button></form>
-      <div class="composer-note">Enter to send · Shift + Enter for a new line <span>Guest chat · not end-to-end encrypted</span></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#202c33" />
+    <title>Chat - Messages</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main id="app" class="app" hidden>
+      <nav class="rail" aria-label="Account">
+        <button
+          class="rail-active"
+          aria-label="Chats"
+          id="show-chats"
+          type="button"
+        >
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5a8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z"
+            />
+          </svg>
+        </button>
+        <div class="rail-bottom">
+          <button
+            id="theme-button"
+            aria-label="Switch to light theme"
+            title="Switch theme"
+            type="button"
+          >
+            <svg viewBox="0 0 24 24">
+              <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" />
+            </svg></button
+          ><button
+            id="account-button"
+            aria-label="Account and sign out"
+            type="button"
+          >
+            <span id="self-avatar" class="avatar">M</span>
+          </button>
+        </div>
+      </nav>
+      <aside class="sidebar" aria-label="Chats">
+        <header class="sidebar-header">
+          <h1>Chats</h1>
+          <div>
+            <button
+              id="new-chat"
+              class="icon-button"
+              aria-label="New chat"
+              title="New chat"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="M12 20H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v7M16 15v7m-3-3h6M7 8h8M7 12h5"
+                />
+              </svg></button
+            ><button
+              id="mobile-account"
+              class="icon-button"
+              aria-label="Account"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="5" r="1" />
+                <circle cx="12" cy="12" r="1" />
+                <circle cx="12" cy="19" r="1" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="search-box">
+          <svg viewBox="0 0 24 24">
+            <circle cx="10.5" cy="10.5" r="6.5" />
+            <path d="m16 16 5 5" /></svg
+          ><input
+            id="chat-search"
+            placeholder="Search or start a new chat"
+            aria-label="Search chats"
+          />
+        </div>
+        <div class="filters">
+          <button class="active" data-filter="all" type="button">All</button
+          ><button data-filter="unread" type="button">Unread</button
+          ><button data-filter="group" type="button">Groups</button>
+        </div>
+        <div
+          id="chat-list"
+          class="chat-list"
+          role="list"
+          aria-label="Conversations"
+        ></div>
+        <div id="sidebar-empty" class="sidebar-empty" hidden>
+          <p>No conversations yet</p>
+          <span>Start a chat with someone who's signed up.</span
+          ><button id="empty-new-chat" type="button">
+            Start a conversation
+          </button>
+        </div>
+        <div class="sidebar-footer">
+          <span class="status-dot"></span
+          ><span id="connection-status" role="status">Connecting...</span>
+        </div>
+      </aside>
+      <section id="conversation" class="conversation" aria-label="Conversation">
+        <div id="empty-chat" class="empty-chat">
+          <div class="empty-illustration" aria-hidden="true">
+            <svg viewBox="0 0 100 80">
+              <rect x="8" y="8" width="72" height="50" rx="5" />
+              <path d="M35 67h20M45 58v9" />
+              <rect x="66" y="33" width="23" height="39" rx="4" />
+              <path d="M32 28h25M32 37h17" />
+            </svg>
+          </div>
+          <h2>Messages, wherever you are</h2>
+          <p>
+            Send photos, voice notes and messages.<br />Start a conversation
+            from your contact list.
+          </p>
+          <span class="empty-privacy"
+            >Independent chat app. Not WhatsApp. No end-to-end encryption.</span
+          >
+        </div>
+        <div id="active-chat" class="active-chat" hidden>
+          <header class="chat-header">
+            <button
+              id="back"
+              class="icon-button back-button"
+              aria-label="Back to chats"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7" /></svg></button
+            ><button
+              id="chat-info"
+              class="chat-identity"
+              type="button"
+              aria-label="Conversation info"
+            >
+              <span id="chat-avatar" class="avatar large"></span
+              ><span class="chat-heading"
+                ><strong id="chat-title"></strong
+                ><span id="chat-subtitle"></span
+              ></span></button
+            ><button
+              id="search-messages-toggle"
+              class="icon-button"
+              aria-label="Search messages"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24">
+                <circle cx="10.5" cy="10.5" r="6.5" />
+                <path d="m16 16 5 5" />
+              </svg>
+            </button>
+          </header>
+          <div id="message-search-bar" class="message-search-bar" hidden>
+            <input
+              id="message-search"
+              placeholder="Search conversation"
+              aria-label="Search conversation"
+            /><span id="search-count"></span
+            ><button
+              id="close-message-search"
+              class="icon-button"
+              aria-label="Close search"
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div id="chat-body" class="chat-body">
+            <button id="load-older" class="load-older" type="button" hidden>
+              Load earlier messages
+            </button>
+            <div id="chat-start" class="chat-start">
+              Only members of this conversation can view its messages.<br />Messages
+              are stored on this server. Not end-to-end encrypted.
+            </div>
+            <ol
+              id="messages"
+              aria-label="Messages"
+              aria-live="polite"
+              aria-relevant="additions"
+            ></ol>
+          </div>
+          <div id="typing" class="typing" role="status"></div>
+          <div id="notice" class="notice" role="alert" hidden></div>
+          <div id="reply-bar" class="reply-bar" hidden>
+            <div>
+              <strong id="reply-name"></strong>
+              <p id="reply-text"></p>
+            </div>
+            <button
+              id="cancel-reply"
+              class="icon-button"
+              aria-label="Cancel reply"
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div id="attachment-preview" class="attachment-preview" hidden>
+            <span id="attachment-name"></span
+            ><button
+              id="remove-attachment"
+              class="icon-button"
+              aria-label="Remove attachment"
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div
+            id="emoji-picker"
+            class="emoji-picker"
+            hidden
+            aria-label="Emoji picker"
+          ></div>
+          <form id="message-form" class="composer">
+            <button
+              id="emoji-button"
+              class="icon-button"
+              aria-label="Choose emoji"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M8 14s1 3 4 3 4-3 4-3M8.5 8.5h.01M15.5 8.5h.01" />
+              </svg></button
+            ><button
+              id="attach-button"
+              class="icon-button"
+              aria-label="Attach file"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24">
+                <path
+                  d="m20 11-8.5 8.5a6 6 0 0 1-8.5-8.5L12 2.5a4 4 0 0 1 5.5 5.5L8.5 17a2 2 0 0 1-3-3L14 5.5"
+                />
+              </svg></button
+            ><input
+              id="file-input"
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp,audio/*,video/mp4,video/webm,application/pdf"
+              hidden
+            /><label class="sr-only" for="message-input">Message</label
+            ><textarea
+              id="message-input"
+              maxlength="4000"
+              rows="1"
+              placeholder="Type a message"
+              disabled
+            ></textarea
+            ><button
+              id="voice-button"
+              class="icon-button"
+              aria-label="Record voice note"
+              title="Record voice note"
+              type="button"
+            >
+              <svg viewBox="0 0 24 24">
+                <rect x="9" y="2" width="6" height="12" rx="3" />
+                <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />
+              </svg></button
+            ><button
+              id="send"
+              class="send-button"
+              aria-label="Send message"
+              type="submit"
+              disabled
+            >
+              <svg viewBox="0 0 24 24">
+                <path d="m3 3 19 9-19 9 4-9-4-9ZM7 12h15" />
+              </svg>
+            </button>
+          </form>
+          <div id="recording-bar" class="recording-bar" hidden>
+            <span class="recording-dot"></span
+            ><span id="recording-time">0:00</span
+            ><span>Recording voice note</span
+            ><button id="cancel-recording" type="button">Cancel</button
+            ><button id="stop-recording" type="button">Stop & preview</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <section id="auth-screen" class="auth-screen">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5Z"
+            /></svg
+          ><span>Chat</span>
+        </div>
+        <h1 id="auth-title">Welcome back</h1>
+        <p id="auth-description">Sign in to pick up the conversation.</p>
+        <form id="auth-form">
+          <label for="handle-input">Username</label
+          ><input
+            id="handle-input"
+            autocomplete="username"
+            pattern="[a-z0-9_]{3,24}"
+            minlength="3"
+            maxlength="24"
+            placeholder="your_username"
+            required
+          />
+          <div id="name-field" hidden>
+            <label for="name-input">Your name</label
+            ><input
+              id="name-input"
+              autocomplete="nickname"
+              maxlength="40"
+              placeholder="What should people call you?"
+            />
+          </div>
+          <label for="password-input">Password</label
+          ><input
+            id="password-input"
+            type="password"
+            autocomplete="current-password"
+            minlength="8"
+            maxlength="128"
+            required
+          />
+          <p id="auth-error" class="form-error" role="alert"></p>
+          <button id="auth-submit" class="primary-button" type="submit">
+            Sign in
+          </button>
+        </form>
+        <button id="auth-toggle" class="auth-toggle" type="button">
+          New here? Create an account
+        </button>
+        <p class="auth-disclaimer">
+          An independent WhatsApp-style chat app.<br />Not connected to
+          WhatsApp. No end-to-end encryption.
+        </p>
+      </div>
     </section>
-  </main>
-  <dialog id="join-dialog" aria-labelledby="join-title">
-    <form id="join-form"><div class="dialog-mark" aria-hidden="true">g.</div><div class="eyebrow">PULL UP A CHAIR</div><h2 id="join-title">Let's get you in.</h2><p>Choose a name and a room. Anyone with the same room name can join.</p><label for="username-input">Your name</label><input id="username-input" name="username" placeholder="e.g. Alex" maxlength="24" autocomplete="nickname" required><label for="room-input">Room name</label><input id="room-input" name="room" value="general" pattern="[a-z0-9][a-z0-9-]{0,31}" maxlength="32" required aria-describedby="room-help"><small id="room-help">Lowercase letters, numbers and hyphens. No spaces.</small><p id="join-error" class="error" role="alert"></p><button id="join-button" type="submit">Join the conversation <span aria-hidden="true">→</span></button><small class="privacy-note">Guest names are not verified. Recent messages stay in server memory until a restart or room eviction. This is a demo, not a private messenger.</small></form>
-  </dialog>
-</body>
+    <dialog id="contacts-dialog" aria-labelledby="contacts-title">
+      <header>
+        <h2 id="contacts-title">New chat</h2>
+        <button
+          id="close-contacts"
+          class="icon-button"
+          aria-label="Close contacts"
+          type="button"
+        >
+          ×
+        </button>
+      </header>
+      <div class="contact-tabs">
+        <button id="direct-mode" class="active" type="button">
+          Direct message</button
+        ><button id="group-mode" type="button">New group</button>
+      </div>
+      <div id="group-name-field" hidden>
+        <label for="group-name">Group name</label
+        ><input
+          id="group-name"
+          maxlength="60"
+          placeholder="e.g. Weekend plans"
+        />
+      </div>
+      <input
+        id="contact-search"
+        placeholder="Search name or username"
+        aria-label="Search contacts"
+      />
+      <p class="contact-help">
+        People registered on this app, not your phone contacts.
+      </p>
+      <div id="contact-list" class="contact-list"></div>
+      <p id="contacts-error" class="form-error" role="alert"></p>
+      <button id="create-group" class="primary-button" type="button" hidden>
+        Create group
+      </button>
+    </dialog>
+    <dialog id="info-dialog" aria-labelledby="info-title">
+      <header>
+        <h2 id="info-title">Conversation info</h2>
+        <button
+          id="close-info"
+          class="icon-button"
+          aria-label="Close info"
+          type="button"
+        >
+          ×
+        </button>
+      </header>
+      <div id="info-content"></div>
+    </dialog>
+    <dialog id="account-dialog" aria-labelledby="account-title">
+      <header>
+        <h2 id="account-title">Your account</h2>
+        <button
+          id="close-account"
+          class="icon-button"
+          aria-label="Close account"
+          type="button"
+        >
+          ×
+        </button>
+      </header>
+      <div id="account-info"></div>
+      <button id="logout" class="danger-button" type="button">Sign out</button>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
 </html>
