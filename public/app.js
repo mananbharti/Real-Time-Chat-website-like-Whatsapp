@@ -389,27 +389,33 @@ function buildMessage(m) {
       if (a.mime.startsWith("image/")) {
         const link = el("a");
         link.href = url;
-        link.target = "_blank";
-        link.rel = "noopener";
+        link.setAttribute("aria-label", "Open media viewer: " + a.filename);
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          openMediaViewer(m);
+        });
         const image = el("img", "attachment-image");
-        image.src = url;
+
         image.alt = a.filename;
         image.loading = "lazy";
-        link.append(image);
+        mountMedia(link, image, url, "photo");
         li.append(link);
       } else if (a.mime.startsWith("audio/")) {
         const audio = el("audio");
         audio.controls = true;
         audio.preload = "metadata";
-        audio.src = url;
+
         audio.setAttribute("aria-label", "Voice note from " + m.senderName);
-        li.append(audio);
+        mountMedia(li, audio, url, "audio");
       } else if (a.mime.startsWith("video/")) {
         const video = el("video");
         video.controls = true;
         video.preload = "metadata";
-        video.src = url;
-        li.append(video);
+        mountMedia(li, video, url, "video");
+        const expand = el("button", "expand-media", "Open video");
+        expand.type = "button";
+        expand.onclick = () => openMediaViewer(m);
+        li.append(expand);
       } else {
         const link = el("a", "file-link");
         link.href = url;
@@ -565,9 +571,336 @@ function clearReply() {
   reply = null;
   $("reply-bar").hidden = true;
 }
+function chatSettings() {
+  const defaults = {
+    enterSend: true,
+    spellcheck: true,
+    emojiReplace: true,
+    uploadQuality: "standard",
+    autoPhotos: true,
+    autoAudio: true,
+    autoVideos: true,
+  };
+  try {
+    return {
+      ...defaults,
+      ...JSON.parse(localStorage.getItem("chat-settings-" + me?.id) || "{}"),
+    };
+  } catch {
+    return defaults;
+  }
+}
+function saveChatSetting(key, value) {
+  try {
+    localStorage.setItem(
+      "chat-settings-" + me.id,
+      JSON.stringify({ ...chatSettings(), [key]: value }),
+    );
+  } catch {
+    toast("Preferences could not be saved on this device.");
+    return;
+  }
+  $("message-input").spellcheck = chatSettings().spellcheck;
+  renderMessages();
+}
+function mountMedia(container, node, url, kind) {
+  const allowed =
+    chatSettings()[
+      { photo: "autoPhotos", audio: "autoAudio", video: "autoVideos" }[kind]
+    ];
+  if (allowed) {
+    node.src = url;
+    container.append(node);
+    return;
+  }
+  const load = el("button", "media-load", "Download " + kind);
+  load.type = "button";
+  load.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    node.src = url;
+    load.replaceWith(node);
+  });
+  container.append(load);
+}
+const viewerReferenceIcons = {
+  "Zoom out":
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="x18cpw0e" fill="currentColor"><path fill="currentColor" d="M8 10.5a.97.97 0 0 1-.71-.29A.97.97 0 0 1 7 9.5c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29h3c.28 0 .52.1.71.29.2.19.29.43.29.71 0 .28-.1.52-.29.71a.94.94 0 0 1-.71.29H8ZM9.5 16a6.27 6.27 0 0 1-4.61-1.89A6.27 6.27 0 0 1 3 9.5c0-1.82.63-3.35 1.89-4.61A6.27 6.27 0 0 1 9.5 3c1.82 0 3.35.63 4.61 1.89A6.27 6.27 0 0 1 16 9.5a6.1 6.1 0 0 1-1.3 3.8l5.6 5.6c.18.18.27.42.27.7 0 .28-.09.52-.27.7a.95.95 0 0 1-.7.27.95.95 0 0 1-.7-.27l-5.6-5.6A5.96 5.96 0 0 1 9.5 16Zm0-2c1.25 0 2.31-.44 3.19-1.31A4.34 4.34 0 0 0 14 9.5c0-1.25-.44-2.31-1.31-3.19A4.34 4.34 0 0 0 9.5 5c-1.25 0-2.31.44-3.19 1.31A4.34 4.34 0 0 0 5 9.5c0 1.25.44 2.31 1.31 3.19A4.34 4.34 0 0 0 9.5 14Z"></path></svg>',
+  "Zoom in":
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M8.5 10.5h-1a.97.97 0 0 1-.71-.29.97.97 0 0 1-.29-.71c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29h1v-1c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29.28 0 .52.1.71.29.2.19.29.43.29.71v1h1c.28 0 .52.1.71.29.2.19.29.43.29.71 0 .28-.1.52-.29.71a.94.94 0 0 1-.71.29h-1v1c0 .28-.1.52-.29.71a.94.94 0 0 1-.71.29.97.97 0 0 1-.71-.29.97.97 0 0 1-.29-.71v-1Zm1 5.5a6.27 6.27 0 0 1-4.61-1.89A6.27 6.27 0 0 1 3 9.5c0-1.82.63-3.35 1.89-4.61A6.27 6.27 0 0 1 9.5 3c1.82 0 3.35.63 4.61 1.89A6.27 6.27 0 0 1 16 9.5a6.1 6.1 0 0 1-1.3 3.8l5.6 5.6c.18.18.27.42.27.7 0 .28-.09.52-.27.7a.95.95 0 0 1-.7.27.95.95 0 0 1-.7-.27l-5.6-5.6A5.96 5.96 0 0 1 9.5 16Zm0-2c1.25 0 2.31-.44 3.19-1.31A4.34 4.34 0 0 0 14 9.5c0-1.25-.44-2.31-1.31-3.19A4.34 4.34 0 0 0 9.5 5c-1.25 0-2.31.44-3.19 1.31A4.34 4.34 0 0 0 5 9.5c0 1.25.44 2.31 1.31 3.19A4.34 4.34 0 0 0 9.5 14Z"></path></svg>',
+  "Go to message":
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" fill-rule="evenodd" d="M3 9 .94 5.53A1 1 0 0 1 1.79 4h17.54C20.81 4 22 5.2 22 6.67v10.66c0 1.48-1.2 2.67-2.67 2.67H5.67A2.67 2.67 0 0 1 3 17.33V9Zm2-.55L3.53 6h15.8c.37 0 .67.3.67.67v10.66c0 .37-.3.67-.67.67H5.67a.67.67 0 0 1-.67-.67V8.45Z" clip-rule="evenodd"></path><path fill="currentColor" d="M7 10a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2H8a1 1 0 0 1-1-1Zm0 4a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H8a1 1 0 0 1-1-1Z"></path></svg>',
+  Reply:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="m6.83 12 2.9 2.9c.2.2.3.43.28.7a1 1 0 0 1-.31.7c-.2.18-.43.28-.7.29a.92.92 0 0 1-.7-.29l-4.6-4.6a.96.96 0 0 1 0-1.4l4.6-4.6a.93.93 0 0 1 .69-.28c.27 0 .51.1.71.28.2.2.3.44.3.71 0 .28-.1.51-.3.71L6.83 10H16c1.38 0 2.56.49 3.54 1.46A4.82 4.82 0 0 1 21 15v3c0 .28-.1.52-.29.71A.94.94 0 0 1 20 19a.97.97 0 0 1-.71-.29A.97.97 0 0 1 19 18v-3c0-.83-.3-1.54-.88-2.13A2.9 2.9 0 0 0 16 12H6.83Z"></path></svg>',
+  Star: '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="m8.85 16.82 3.15-1.9 3.15 1.93-.83-3.6 2.78-2.4-3.65-.32L12 7.13l-1.45 3.37-3.65.32 2.78 2.43-.83 3.57Zm3.15.45-4.15 2.5a.9.9 0 0 1-.57.15.97.97 0 0 1-.53-.2 1.2 1.2 0 0 1-.35-.43.87.87 0 0 1-.05-.59l1.1-4.72-3.67-3.18a.96.96 0 0 1-.28-1.08c.07-.18.17-.33.3-.45.13-.11.32-.19.55-.22l4.85-.43 1.88-4.45a.9.9 0 0 1 .38-.45c.18-.1.36-.15.54-.15.18 0 .36.05.54.15.17.1.3.25.39.45l1.87 4.45 4.85.43c.23.03.42.1.55.22a1.07 1.07 0 0 1 .34 1.02.96.96 0 0 1-.31.51l-3.68 3.17 1.1 4.73a.9.9 0 0 1-.05.59c-.08.17-.2.32-.35.44a.97.97 0 0 1-.52.2.9.9 0 0 1-.58-.16L12 17.27Z"></path></svg>',
+  Pin: '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M16 5v7l1.7 1.7a1 1 0 0 1 .3.73V15c0 .28-.1.52-.29.71A.94.94 0 0 1 17 16h-4v5.85c0 .28-.1.52-.29.71a.94.94 0 0 1-.71.29.97.97 0 0 1-.71-.29.97.97 0 0 1-.29-.71V16H7a.97.97 0 0 1-.71-.29A.97.97 0 0 1 6 15v-.57a1.03 1.03 0 0 1 .3-.73L8 12V5a.97.97 0 0 1-.71-.29A.97.97 0 0 1 7 4c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29h8c.28 0 .52.1.71.29.2.19.29.43.29.71 0 .28-.1.52-.29.71A.94.94 0 0 1 16 5Zm-7.15 9h6.3L14 12.85V5h-4v7.85L8.85 14Z"></path></svg>',
+  React:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M15.5 11c.42 0 .77-.15 1.06-.44.3-.29.44-.64.44-1.06 0-.42-.15-.77-.44-1.06A1.4 1.4 0 0 0 15.5 8c-.42 0-.77.15-1.06.44-.3.29-.44.64-.44 1.06 0 .42.15.77.44 1.06.29.3.64.44 1.06.44Zm-7 0c.42 0 .77-.15 1.06-.44.3-.29.44-.64.44-1.06 0-.42-.15-.77-.44-1.06A1.4 1.4 0 0 0 8.5 8c-.42 0-.77.15-1.06.44-.3.29-.44.64-.44 1.06 0 .42.15.77.44 1.06.29.3.64.44 1.06.44ZM12 22a10.1 10.1 0 0 1-9.21-6.1A9.74 9.74 0 0 1 2 12a10.1 10.1 0 0 1 6.1-9.21A9.74 9.74 0 0 1 12 2a10.1 10.1 0 0 1 9.21 6.1c.53 1.22.79 2.52.79 3.9s-.26 2.68-.79 3.9a10.1 10.1 0 0 1-5.31 5.31A9.74 9.74 0 0 1 12 22Zm0-2c2.23 0 4.13-.77 5.68-2.32A7.72 7.72 0 0 0 20 12a7.7 7.7 0 0 0-2.32-5.67A7.72 7.72 0 0 0 12 4a7.7 7.7 0 0 0-5.67 2.33A7.72 7.72 0 0 0 4 12c0 2.23.78 4.13 2.33 5.68A7.72 7.72 0 0 0 12 20Zm0-2.5a5.53 5.53 0 0 0 4.65-2.6c.1-.2.1-.4-.02-.6a.57.57 0 0 0-.53-.3H7.9a.6.6 0 0 0-.53.3.6.6 0 0 0-.02.6A5.5 5.5 0 0 0 12 17.5Z"></path></svg>',
+  Forward:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M19.18 11 15.3 7.12a.97.97 0 0 1-.3-.7c0-.28.1-.52.3-.72.2-.18.44-.28.71-.28.28 0 .5.1.69.28l4.6 4.6c.1.1.17.2.21.32a1.2 1.2 0 0 1 0 .76.88.88 0 0 1-.21.32l-4.6 4.6a.9.9 0 0 1-.7.29c-.27-.01-.5-.1-.7-.29a1 1 0 0 1-.31-.7.87.87 0 0 1 .29-.7l3.9-3.9Zm-6 1H7c-.83 0-1.54.3-2.13.88A2.9 2.9 0 0 0 4 15v3c0 .28-.1.52-.29.71A.94.94 0 0 1 3 19a.97.97 0 0 1-.71-.29A.97.97 0 0 1 2 18v-3c0-1.38.49-2.56 1.46-3.54A4.82 4.82 0 0 1 7 10h6.18L10.3 7.12a.97.97 0 0 1-.3-.7c0-.28.1-.52.3-.72.2-.18.44-.28.71-.28.28 0 .5.1.69.28l4.6 4.6c.1.1.17.2.21.32a1.2 1.2 0 0 1 0 .76.88.88 0 0 1-.21.32l-4.6 4.6a.9.9 0 0 1-.7.29c-.27-.01-.5-.1-.7-.29a1 1 0 0 1-.31-.7.87.87 0 0 1 .29-.7l2.9-2.9Z"></path></svg>',
+  Download:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M12 15.57a1.1 1.1 0 0 1-.38-.06.88.88 0 0 1-.32-.21l-3.6-3.6a.92.92 0 0 1-.29-.7 1.03 1.03 0 0 1 1-1.01c.28-.01.52.08.71.29L11 12.14V5c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29.28 0 .52.1.71.29.2.19.29.43.29.71v7.15l1.88-1.88c.2-.2.43-.3.7-.28a1.02 1.02 0 0 1 1 1.01c.02.27-.08.5-.28.7l-3.6 3.6a.8.8 0 0 1-.32.21 1.1 1.1 0 0 1-.38.06ZM6 20c-.55 0-1.02-.2-1.41-.59-.4-.39-.59-.86-.59-1.41v-2c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29.28 0 .52.1.71.29.2.19.29.43.29.71v2h12v-2c0-.28.1-.52.29-.71.19-.2.43-.29.71-.29.28 0 .52.1.71.29.2.19.29.43.29.71v2c0 .55-.2 1.02-.59 1.41-.39.4-.86.59-1.41.59H6Z"></path></svg>',
+  Menu: '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="M12 20c-.55 0-1.02-.2-1.41-.59-.4-.39-.59-.86-.59-1.41 0-.55.2-1.02.59-1.41.39-.4.86-.59 1.41-.59.55 0 1.02.2 1.41.59.4.39.59.86.59 1.41 0 .55-.2 1.02-.59 1.41-.39.4-.86.59-1.41.59Zm0-6c-.55 0-1.02-.2-1.41-.59-.4-.39-.59-.86-.59-1.41 0-.55.2-1.02.59-1.41.39-.4.86-.59 1.41-.59.55 0 1.02.2 1.41.59.4.39.59.86.59 1.41 0 .55-.2 1.02-.59 1.41-.39.4-.86.59-1.41.59Zm0-6c-.55 0-1.02-.2-1.41-.59-.4-.39-.59-.86-.59-1.41 0-.55.2-1.02.59-1.41.39-.4.86-.59 1.41-.59.55 0 1.02.2 1.41.59.4.39.59.86.59 1.41 0 .55-.2 1.02-.59 1.41-.39.4-.86.59-1.41.59Z"></path></svg>',
+  Close:
+    '<svg viewBox="0 0 24 24" height="24" width="24" preserveAspectRatio="xMidYMid meet" class="" fill="currentColor"><path fill="currentColor" d="m12 13.4-4.9 4.9a.95.95 0 0 1-.7.27.95.95 0 0 1-.7-.27.95.95 0 0 1-.28-.7c0-.28.1-.52.28-.7l4.9-4.9-4.9-4.9a.95.95 0 0 1-.28-.7.95.95 0 0 1 .97-.98c.3 0 .53.1.71.28l4.9 4.9 4.9-4.9a.95.95 0 0 1 .7-.27c.28 0 .52.09.7.27.18.18.27.42.27.7 0 .28-.09.52-.27.7L13.4 12l4.9 4.9c.18.18.27.42.27.7 0 .28-.09.52-.27.7a.95.95 0 0 1-.7.27.95.95 0 0 1-.7-.27L12 13.4Z"></path></svg>',
+};
+function openMediaViewer(message, source = messages) {
+  const list = source.filter(
+    (m) =>
+      m.attachment &&
+      /^(image|video)\//.test(m.attachment.mime) &&
+      !m.deletedAt,
+  );
+  let index = list.findIndex((m) => m.id === message.id);
+  if (index < 0) return;
+  const dialog = el("dialog", "media-viewer");
+  dialog.setAttribute("aria-label", "Media viewer");
+  dialog.tabIndex = -1;
+  document.body.append(dialog);
+  function paint() {
+    dialog.querySelectorAll("video").forEach((v) => v.pause());
+    dialog.replaceChildren();
+    const item = list[index],
+      a = item.attachment,
+      header = el("header"),
+      identity = el("div", "viewer-identity");
+    identity.append(
+      userAvatar(active().members.find((u) => u.id === item.senderId) || me),
+      el("strong", "", item.senderId === me.id ? "You" : item.senderName),
+      el("time", "", new Date(item.createdAt).toLocaleString()),
+    );
+    const controls = el("div", "viewer-controls");
+    const action = (label, fn, asLink = false) => {
+      const button = el(asLink ? "a" : "button", "viewer-action");
+      if (!asLink) button.type = "button";
+      button.setAttribute(
+        "aria-label",
+        label === "Close"
+          ? "Close media viewer"
+          : label === "Download"
+            ? "Download media"
+            : label,
+      );
+      button.title = label;
+      button.innerHTML = viewerReferenceIcons[label];
+      button.addEventListener("click", async () => {
+        try {
+          await fn();
+        } catch (e) {
+          toast(e.message);
+        }
+      });
+      controls.append(button);
+      return button;
+    };
+    const zoomOut = action("Zoom out", () => {
+      stage.classList.remove("zoomed");
+      zoomOut.disabled = true;
+      zoomIn.disabled = false;
+    });
+    zoomOut.disabled = true;
+    const zoomIn = action("Zoom in", () => {
+      stage.classList.add("zoomed");
+      zoomOut.disabled = false;
+      zoomIn.disabled = true;
+    });
+    action("Go to message", () => {
+      dialog.close();
+      const node = [...$("messages").children].find(
+        (e) => e.dataset.messageId === item.id,
+      );
+      node?.scrollIntoView({ block: "center" });
+      node?.classList.add("search-match");
+      setTimeout(() => node?.classList.remove("search-match"), 1800);
+    });
+    action("Reply", () => {
+      dialog.close();
+      setReply(item);
+    });
+    const star = action("Star", async () => {
+      await api(`/api/messages/${item.id}/star`, {
+        method: "POST",
+        body: JSON.stringify({ starred: !item.starred }),
+      });
+      item.starred = !item.starred;
+      star.setAttribute("aria-pressed", String(item.starred));
+      renderMessages();
+    });
+    star.setAttribute("aria-pressed", String(!!item.starred));
+    const pin = action("Pin", () =>
+      toast(
+        "Pinning individual messages is not implemented. You can pin conversations from the chat menu.",
+      ),
+    );
+    pin.setAttribute("aria-disabled", "true");
+    action("React", () => {
+      dialog.close();
+      showMessageMenu(item);
+    });
+    action("Forward", () => {
+      dialog.close();
+      const box = showTools("Forward to");
+      for (const chat of chats.values())
+        toolButton(box, chat.name, async () => {
+          await api(`/api/messages/${item.id}/forward`, {
+            method: "POST",
+            body: JSON.stringify({ chatId: chat.id }),
+          });
+          toolsDialog.close();
+          toast("Message forwarded.");
+        });
+    });
+    const download = action("Download", () => {}, true);
+    download.href = "/api/attachments/" + a.id;
+    download.download = a.filename;
+    action("Menu", () => {
+      dialog.close();
+      showMessageMenu(item);
+    });
+    action("Close", () => dialog.close());
+    header.append(identity, controls);
+    const stage = el("div", "media-stage"),
+      media = el(a.mime.startsWith("video/") ? "video" : "img");
+    media.src = "/api/attachments/" + a.id;
+    if (media.tagName === "VIDEO") media.controls = true;
+    else {
+      media.alt = a.filename;
+      media.tabIndex = 0;
+      media.setAttribute("aria-label", "Zoom media");
+      media.onclick = () => {
+        stage.classList.toggle("zoomed");
+        zoomOut.disabled = !stage.classList.contains("zoomed");
+        zoomIn.disabled = stage.classList.contains("zoomed");
+        media.setAttribute(
+          "aria-label",
+          stage.classList.contains("zoomed") ? "Zoom out media" : "Zoom media",
+        );
+      };
+      media.onkeydown = (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          media.click();
+        }
+      };
+    }
+    stage.append(media);
+    dialog.append(header, stage);
+    for (const [delta, label, glyph] of [
+      [-1, "Previous media", "‹"],
+      [1, "Next media", "›"],
+    ]) {
+      const b = el(
+        "button",
+        "viewer-nav " + (delta < 0 ? "previous" : "next"),
+        glyph,
+      );
+      b.type = "button";
+      b.setAttribute("aria-label", label);
+      b.disabled = index + delta < 0 || index + delta >= list.length;
+      b.onclick = () => {
+        index += delta;
+        paint();
+      };
+      dialog.append(b);
+    }
+    const footer = el("footer"),
+      film = el("div", "viewer-filmstrip");
+    footer.append(
+      el(
+        "span",
+        "sr-only",
+        a.filename + " " + (index + 1) + " of " + list.length,
+      ),
+    );
+    list.forEach((entry, i) => {
+      const button = el(
+        "button",
+        "viewer-thumbnail" + (i === index ? " selected" : ""),
+      );
+      button.type = "button";
+      button.setAttribute("aria-label", "View media " + (i + 1));
+      button.setAttribute("aria-current", String(i === index));
+      const file = entry.attachment;
+      if (
+        file.mime.startsWith("image/") &&
+        (chatSettings().autoPhotos || i === index)
+      ) {
+        const img = el("img");
+        img.src = "/api/attachments/" + file.id;
+        img.alt = "";
+        button.append(img);
+      } else button.textContent = file.mime.startsWith("video/") ? "▶" : "▧";
+      button.onclick = () => {
+        index = i;
+        paint();
+      };
+      film.append(button);
+    });
+    footer.append(film);
+    dialog.append(footer);
+    requestAnimationFrame(() => (film.scrollLeft = index * 84));
+    if (dialog.open) dialog.focus({ preventScroll: true });
+  }
+  dialog.addEventListener("keydown", (e) => {
+    if (
+      (e.key === "ArrowRight" && index < list.length - 1) ||
+      (e.key === "ArrowLeft" && index > 0)
+    ) {
+      e.preventDefault();
+      index += e.key === "ArrowRight" ? 1 : -1;
+      paint();
+    }
+  });
+  dialog.addEventListener(
+    "close",
+    () => {
+      dialog.querySelectorAll("video").forEach((v) => v.pause());
+      dialog.remove();
+    },
+    { once: true },
+  );
+  paint();
+  dialog.showModal();
+}
+async function prepareUpload(file) {
+  if (
+    chatSettings().uploadQuality !== "standard" ||
+    !/^image\/(jpeg|png|webp)$/.test(file.type)
+  )
+    return file;
+  try {
+    const bitmap = await createImageBitmap(file),
+      scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1) {
+      bitmap.close();
+      return file;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas
+      .getContext("2d")
+      .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const mime = file.type === "image/png" ? "image/png" : "image/jpeg",
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.82));
+    return blob && blob.size < file.size
+      ? new File([blob], file.name, { type: mime })
+      : file;
+  } catch {
+    return file;
+  }
+}
 function clearAttachment() {
   attachment = null;
   $("attachment-preview").hidden = true;
+  $("attachment-preview")
+    .querySelectorAll("audio,video,img")
+    .forEach((e) => {
+      e.pause?.();
+      e.remove();
+    });
+  $("attachment-preview").classList.remove("visual-attachment");
   $("file-input").value = "";
   updateComposer();
 }
@@ -629,6 +962,7 @@ async function refreshChats() {
 }
 async function start(user) {
   me = user;
+  $("message-input").spellcheck = chatSettings().spellcheck;
   try {
     drafts.clear();
     for (const [id, text] of JSON.parse(
@@ -915,6 +1249,23 @@ $("cancel-reply").addEventListener("click", clearReply);
 $("remove-attachment").addEventListener("click", clearAttachment);
 $("message-input").addEventListener("input", () => {
   const input = $("message-input");
+  if (
+    chatSettings().emojiReplace &&
+    input.selectionStart === input.value.length
+  ) {
+    const replacements = {
+      ":)": "🙂",
+      ":D": "😃",
+      "; )": "😉",
+      ":(": "🙁",
+      "<3": "❤️",
+      ":P": "😛",
+    };
+    input.value = input.value.replace(
+      /(^|\s)(:\)|:D|; \)|:\(|<3|:P)(\s)$/g,
+      (all, before, face, after) => before + replacements[face] + after,
+    );
+  }
   input.style.height = "auto";
   input.style.height = Math.min(input.scrollHeight, 140) + "px";
   drafts.set(activeId, input.value);
@@ -935,7 +1286,12 @@ $("message-input").addEventListener("input", () => {
   }, 1800);
 });
 $("message-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+  if (
+    e.key === "Enter" &&
+    !e.shiftKey &&
+    !e.isComposing &&
+    (chatSettings().enterSend || e.ctrlKey || e.metaKey)
+  ) {
     e.preventDefault();
     $("message-form").requestSubmit();
   }
@@ -1008,7 +1364,7 @@ async function uploadFile(file, targetId = activeId) {
   notice("Uploading " + file.name + "...");
   updateComposer();
   const data = new FormData();
-  data.append("file", file);
+  data.append("file", await prepareUpload(file));
   try {
     const result = await api(`/api/chats/${targetId}/attachments`, {
       method: "POST",
@@ -1027,8 +1383,24 @@ async function uploadFile(file, targetId = activeId) {
       Math.ceil(attachment.size / 1024) +
       " KB · ready to send";
     $("attachment-preview").hidden = false;
-    const old = $("attachment-preview").querySelector("audio");
-    old?.remove();
+    $("attachment-preview")
+      .querySelectorAll("audio,video,img")
+      .forEach((e) => {
+        e.pause?.();
+        e.remove();
+      });
+    const visual = /^(image|video)\//.test(attachment.mime);
+    $("attachment-preview").classList.toggle("visual-attachment", visual);
+    if (visual) {
+      const media = el(
+        attachment.mime.startsWith("image/") ? "img" : "video",
+        "pending-media",
+      );
+      media.src = "/api/attachments/" + attachment.id;
+      if (media.tagName === "IMG") media.alt = attachment.filename;
+      else media.controls = true;
+      $("attachment-preview").prepend(media);
+    }
     if (attachment.mime.startsWith("audio/")) {
       const preview = el("audio");
       preview.controls = true;
@@ -2614,7 +2986,119 @@ showAccount = function () {
   );
   row("Chats", "Theme, chat settings", referenceIcons.Chats, () => {
     const panel = showTools("Chats");
-    for (const b of [theme, stars].filter(Boolean)) panel.append(b);
+    panel.classList.add("chat-preferences-page");
+    panel.append(el("h3", "settings-section-label", "Display"));
+    if (theme) {
+      theme.setAttribute("aria-label", theme.textContent);
+      theme.replaceChildren(
+        el("span", "preference-title", "Theme"),
+        el(
+          "small",
+          "preference-detail",
+          document.body.classList.contains("light") ? "Light" : "Dark",
+        ),
+        el("span", "preference-arrow", "›"),
+      );
+      theme.classList.add("preference-row");
+      panel.append(theme);
+    }
+    const prefs = chatSettings();
+    const prefRow = (title, detail, action) => {
+      const button = toolButton(panel, title, action);
+      button.classList.add("preference-row");
+      button.setAttribute("aria-label", title);
+      button.replaceChildren(el("span", "preference-title", title));
+      if (detail) button.append(el("small", "preference-detail", detail));
+      button.append(el("span", "preference-arrow", "›"));
+      return button;
+    };
+    const custom = prefRow("Default chat theme", "", () =>
+      toast(
+        "Custom chat themes are not implemented. Use Theme for light or dark.",
+      ),
+    );
+    custom.setAttribute("aria-disabled", "true");
+    custom.classList.add("unavailable-preference");
+    panel.append(el("h3", "settings-section-label", "Chat settings"));
+    prefRow("Media upload quality", "", () => {
+      const box = showTools("Media upload quality");
+      box.classList.add("preference-options");
+      box.append(
+        el(
+          "p",
+          "info-note",
+          "Standard resizes large still photos to at most 1600px. HD keeps original files. Videos and animated images are always unchanged.",
+        ),
+      );
+      for (const [value, title] of [
+        ["standard", "Standard quality"],
+        ["hd", "HD quality"],
+      ]) {
+        const label = el("label", "option-row"),
+          input = el("input");
+        input.type = "radio";
+        input.name = "upload-quality";
+        input.checked = chatSettings().uploadQuality === value;
+        input.setAttribute("aria-label", title);
+        input.onchange = () => saveChatSetting("uploadQuality", value);
+        label.append(input, el("span", "", title));
+        box.append(label);
+      }
+    });
+    prefRow("Media auto-download", "", () => {
+      const box = showTools("Media auto-download");
+      box.classList.add("preference-options");
+      box.append(
+        el(
+          "p",
+          "info-note",
+          "Choose media to load automatically in the chat. Other media loads only when you tap Download. Documents always download on request.",
+        ),
+      );
+      for (const [key, title] of [
+        ["autoPhotos", "Photos"],
+        ["autoAudio", "Audio"],
+        ["autoVideos", "Videos"],
+      ]) {
+        const label = el("label", "option-row"),
+          input = el("input");
+        input.type = "checkbox";
+        input.checked = chatSettings()[key];
+        input.setAttribute("aria-label", title);
+        input.onchange = () => saveChatSetting(key, input.checked);
+        label.append(input, el("span", "", title));
+        box.append(label);
+      }
+    });
+    for (const [key, title, detail] of [
+      ["spellcheck", "Spell check", "Check spelling while typing"],
+      [
+        "emojiReplace",
+        "Replace text with emoji",
+        "Emoji will replace specific text as you type",
+      ],
+      ["enterSend", "Enter is send", "Enter key will send your message"],
+    ]) {
+      const label = el("label", "preference-toggle"),
+        text = el("div"),
+        input = el("input");
+      input.type = "checkbox";
+      input.checked = prefs[key];
+      input.setAttribute("role", "switch");
+      input.setAttribute("aria-label", title);
+      input.onchange = () => saveChatSetting(key, input.checked);
+      text.append(
+        el("span", "preference-title", title),
+        el("small", "preference-detail", detail),
+      );
+      label.append(text, input);
+      panel.append(label);
+    }
+    if (stars) {
+      stars.classList.add("preference-row");
+      stars.setAttribute("aria-label", "Starred messages");
+      panel.append(stars);
+    }
   });
   row(
     "Notifications",
@@ -2753,6 +3237,54 @@ function showMainMenu() {
   box.style.left = Math.max(8, Math.min(r.x, innerWidth - 190)) + "px";
   box.style.top = r.bottom + 4 + "px";
 }
+
+function setReferenceIcon(button, label) {
+  if (referenceIcons[label]) {
+    button.innerHTML = referenceIcons[label];
+    button.classList.add("reference-icon");
+  }
+}
+setReferenceIcon($("show-chats"), "Chats");
+setReferenceIcon(statusButton, "Status");
+setReferenceIcon($("attach-button"), "Attach");
+setReferenceIcon($("emoji-button"), "Emojis, GIFs, Stickers");
+setReferenceIcon($("mobile-account"), "Menu");
+const searchIconButton = document.querySelector(
+  '.chat-header [aria-label="Search messages"]',
+);
+if (searchIconButton) setReferenceIcon(searchIconButton, "Search");
+const railNav = document.querySelector(".rail");
+function unavailableRail(label) {
+  const b = el("button");
+  b.type = "button";
+  b.setAttribute("aria-label", label);
+  b.title = label + " is not implemented in this independent build";
+  b.setAttribute("aria-disabled", "true");
+  b.addEventListener("click", () =>
+    toast(label + " is not implemented in this independent build."),
+  );
+  setReferenceIcon(b, label);
+  return b;
+}
+$("show-chats").after(unavailableRail("Calls"));
+statusButton.after(unavailableRail("Channels"), unavailableRail("Communities"));
+const railLine = el("div", "rail-separator");
+railLine.setAttribute("aria-hidden", "true");
+railNav.insertBefore(railLine, document.querySelector(".rail-bottom"));
+const ai = unavailableRail("Meta AI");
+ai.classList.add("meta-ai-icon");
+railLine.after(ai);
+const mediaRail = el("button");
+mediaRail.type = "button";
+mediaRail.setAttribute("aria-label", "Shared media");
+mediaRail.title = "Shared media in this conversation";
+setReferenceIcon(mediaRail, "Media");
+mediaRail.addEventListener("click", () => {
+  if (active()) galleryButton.click();
+  else toast("Open a conversation to see shared media.");
+});
+document.querySelector(".rail-bottom").prepend(mediaRail);
+$("theme-button").hidden = true;
 
 if (menuReferenceIcons["Ask Meta AI"]) {
   ai.innerHTML = menuReferenceIcons["Ask Meta AI"];
@@ -2992,7 +3524,11 @@ $("message-search").addEventListener("input", searchAffordances);
 const beforeSettingsDrawer = showTools;
 showTools = function (title, point) {
   const panel = beforeSettingsDrawer(title, point);
-  panel.classList.remove("settings-subpage", "profile-editor");
+  panel.classList.remove(
+    "settings-subpage",
+    "profile-editor",
+    "chat-preferences-page",
+  );
   if (
     !point &&
     $("account-dialog").open &&
@@ -3001,6 +3537,8 @@ showTools = function (title, point) {
       "Account",
       "Privacy",
       "Chats",
+      "Media upload quality",
+      "Media auto-download",
       "Keyboard shortcuts",
       "About",
     ].includes(title)
