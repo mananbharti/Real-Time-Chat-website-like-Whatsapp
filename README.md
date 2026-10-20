@@ -138,10 +138,6 @@ Messages and media are readable by the server operator. The app needs HTTPS, reg
 
 See [technical notes](docs/TECHNICAL-NOTES.md) for precise behavior, limits, deployment guidance and the REA analysis record.
 
-## Development approach
-
-[REA](https://github.com/morluto/rea) was used for source analysis and inspection of the running application. Implementation was verified separately with integration and real-browser tests. No WhatsApp source code, credentials or private conversations are included in this repository.
-
 ## Author & license
 
 Built for [Manan Bharti](https://github.com/mananbharti). If you reuse the project, please link back to the original repository.
