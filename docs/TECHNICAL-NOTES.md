@@ -41,6 +41,8 @@ Optional environment variables:
 - Safe clickable links and local link cards. **Link cards show the URL host/path, not fetched page titles, thumbnails or Open Graph previews.** URLs are not fetched server-side, avoiding unsolicited outbound requests and SSRF.
 - Search currently loaded messages or search all stored conversation history, up to 100 results.
 - Photos, video, audio and PDFs, up to 25 MB per file, with file-signature checks and protected downloads. SVG/HTML and executables are not accepted. The gallery lists up to 200 shared attachments.
+- In-app image/video viewer for loaded conversation media, with zoom, previous/next, arrow keys, close and authenticated download. Large pending-image/video preview keeps caption/send in the actual composer. Media is still protected by membership checks.
+- Per-account/device Chats preferences persist in local storage: Enter-is-send, browser spelling, trailing-space emoticon replacement, still-photo quality and Photos/Audio/Videos auto-loading. Standard resizes large still photos to a maximum 1600px dimension; HD keeps the original. GIFs/videos are unchanged. With auto-loading off, a media resource is requested only after its Download control is tapped; documents always download on request.
 - Microphone recording with a live waveform, two-minute limit, cancel, preview, send and actual audio playback. Recording needs microphone permission plus HTTPS or localhost. File-format support depends on the browser; an audio file can be attached when recording is unavailable.
 - Emoji picker, multiline input, server timestamps and idempotent send retries. The client keeps an unconfirmed draft and reuses its message ID rather than silently creating duplicates.
 - Per-account/per-chat text drafts persist in browser local storage across reloads. Drafts are not synchronized between devices. Attachments and recordings are not durable drafts.
@@ -50,7 +52,7 @@ Optional environment variables:
 - Editable display name/about and upload/remove a PNG, JPEG or WebP profile picture up to 2 MB.
 - Text statuses shared with people who have a conversation with you; hidden after 24 hours, with owner deletion. **Photo/video stories and story-view receipts are not implemented.**
 - Dark/light theme, responsive chat-list/conversation navigation and opt-in desktop notifications. Muting suppresses background-chat notifications in this app.
-- Keyboard shortcuts: `Ctrl/Cmd+K` for chat search, `Ctrl/Cmd+Shift+F` for message search, `Ctrl/Cmd+Alt+N` for a new chat, `Escape` to dismiss overlays/replies/search, `Enter` to send, `Shift+Enter` for a new line.
+- Keyboard shortcuts: `Ctrl/Cmd+K` for chat search, `Ctrl/Cmd+Shift+F` for message search, `Ctrl/Cmd+Alt+N` for a new chat, `Escape` to dismiss overlays/replies/search, `Enter` to send by default, `Shift+Enter` for a new line. With Enter-is-send off, Enter inserts a new line and Ctrl/Cmd+Enter sends.
 
 ## Tests
 

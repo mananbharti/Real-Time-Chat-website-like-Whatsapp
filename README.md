@@ -95,7 +95,7 @@ npm run test:e2e                  # Browser tests
 npm run test:all                  # Both suites
 ```
 
-The tests use isolated temporary databases. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, reconnect, mobile navigation, draft recovery, menus, statuses, links and shortcuts. CI runs both suites on Node 22.
+The tests use isolated temporary databases. The suite has 15 integration tests and 10 browser scenarios. Browser checks cover two-way direct/group messaging, receipts, refresh, image loading, actual recorded-audio playback, in-app media zoom/navigation, upload quality, persisted composer/media preferences, reconnect, mobile navigation, draft recovery, menus, statuses, links and shortcuts. CI runs both suites on Node 22.
 
 For a system browser, set `CHROME_PATH` to the Chrome executable. Node 22 may display an experimental warning for its built-in SQLite module.
 
