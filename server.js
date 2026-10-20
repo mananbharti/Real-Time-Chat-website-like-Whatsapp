@@ -86,11 +86,33 @@ function createChatServer(options = {}) {
   db.exec(
     "CREATE TABLE IF NOT EXISTS reactions(message_id TEXT NOT NULL REFERENCES messages(id),user_id TEXT NOT NULL REFERENCES users(id),emoji TEXT NOT NULL,PRIMARY KEY(message_id,user_id))",
   );
-  if(!db.prepare('PRAGMA table_info(sessions)').all().some(c=>c.name==='locked'))db.exec('ALTER TABLE sessions ADD COLUMN locked INTEGER NOT NULL DEFAULT 0');
-  db.exec('CREATE TABLE IF NOT EXISTS polls(message_id TEXT PRIMARY KEY REFERENCES messages(id),options TEXT NOT NULL,multiple INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS votes(message_id TEXT NOT NULL REFERENCES messages(id),user_id TEXT NOT NULL REFERENCES users(id),options TEXT NOT NULL,PRIMARY KEY(message_id,user_id))');
+  if (
+    !db
+      .prepare("PRAGMA table_info(sessions)")
+      .all()
+      .some((c) => c.name === "locked")
+  )
+    db.exec(
+      "ALTER TABLE sessions ADD COLUMN locked INTEGER NOT NULL DEFAULT 0",
+    );
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS polls(message_id TEXT PRIMARY KEY REFERENCES messages(id),options TEXT NOT NULL,multiple INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS votes(message_id TEXT NOT NULL REFERENCES messages(id),user_id TEXT NOT NULL REFERENCES users(id),options TEXT NOT NULL,PRIMARY KEY(message_id,user_id))",
+  );
   for (const column of ["media_path", "media_mime", "media_name"])
-    if (!db.prepare("PRAGMA table_info(stories)").all().some(c => c.name === column)) db.exec(`ALTER TABLE stories ADD COLUMN ${column} TEXT`);
-  db.exec("CREATE TABLE IF NOT EXISTS story_views(story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id),viewed_at TEXT NOT NULL,PRIMARY KEY(story_id,user_id))");
+    if (
+      !db
+        .prepare("PRAGMA table_info(stories)")
+        .all()
+        .some((c) => c.name === column)
+    )
+      db.exec(`ALTER TABLE stories ADD COLUMN ${column} TEXT`);
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS story_views(story_id TEXT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id),viewed_at TEXT NOT NULL,PRIMARY KEY(story_id,user_id))",
+  );
+  if (!db.prepare("PRAGMA table_info(members)").all().some(c => c.name === "role"))
+    db.exec("ALTER TABLE members ADD COLUMN role TEXT NOT NULL DEFAULT 'member'");
+  db.exec(`UPDATE members SET role='admin' WHERE EXISTS (SELECT 1 FROM chats c WHERE c.id=members.chat_id AND c.owner_id=members.user_id AND c.kind='group');
+    CREATE TABLE IF NOT EXISTS group_invites(chat_id TEXT PRIMARY KEY REFERENCES chats(id),token_hash TEXT UNIQUE NOT NULL,expires INTEGER NOT NULL);`);
   const app = express();
   if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   const http = createServer(app);
@@ -137,8 +159,10 @@ function createChatServer(options = {}) {
     db.prepare("DELETE FROM sessions WHERE expires<?").run(now);
     for (const s of io.sockets.sockets.values())
       if (s.data.expires <= now) s.disconnect(true);
-    for (const story of db.prepare("SELECT media_path FROM stories WHERE expires<=?").all(now))
-      if (story.media_path) fs.rmSync(story.media_path, {force:true});
+    for (const story of db
+      .prepare("SELECT media_path FROM stories WHERE expires<=?")
+      .all(now))
+      if (story.media_path) fs.rmSync(story.media_path, { force: true });
     db.prepare("DELETE FROM stories WHERE expires<=?").run(now);
   }, 60000);
   cleanup.unref();
@@ -164,7 +188,8 @@ function createChatServer(options = {}) {
   function auth(req, res, next) {
     const user = tokenUser(parseCookie(req.headers.cookie));
     if (!user) return fail(res, 401, "Please sign in again.");
-    if(user.locked)return fail(res,423,"App is locked. Unlock with your password.");
+    if (user.locked)
+      return fail(res, 423, "App is locked. Unlock with your password.");
     req.user = user;
     next();
   }
@@ -297,7 +322,25 @@ function createChatServer(options = {}) {
     return {
       deletedAt: row.deleted_at,
       editedAt: row.edited_at,
-      poll:row.deleted_at?null:(()=>{const p=db.prepare('SELECT * FROM polls WHERE message_id=?').get(row.id);return p?{options:JSON.parse(p.options),multiple:!!p.multiple,votes:db.prepare('SELECT v.user_id AS userId,v.options,u.name FROM votes v JOIN users u ON u.id=v.user_id WHERE v.message_id=?').all(row.id).map(v=>({...v,options:JSON.parse(v.options)}))}:null;})(),
+      poll: row.deleted_at
+        ? null
+        : (() => {
+            const p = db
+              .prepare("SELECT * FROM polls WHERE message_id=?")
+              .get(row.id);
+            return p
+              ? {
+                  options: JSON.parse(p.options),
+                  multiple: !!p.multiple,
+                  votes: db
+                    .prepare(
+                      "SELECT v.user_id AS userId,v.options,u.name FROM votes v JOIN users u ON u.id=v.user_id WHERE v.message_id=?",
+                    )
+                    .all(row.id)
+                    .map((v) => ({ ...v, options: JSON.parse(v.options) })),
+                }
+              : null;
+          })(),
       reactions: row.deleted_at
         ? []
         : db
@@ -322,11 +365,12 @@ function createChatServer(options = {}) {
     const c = db.prepare("SELECT * FROM chats WHERE id=?").get(id);
     const members = db
       .prepare(
-        "SELECT user_id,read_seq,delivered_seq FROM members WHERE chat_id=?",
+        "SELECT user_id,read_seq,delivered_seq,role FROM members WHERE chat_id=?",
       )
       .all(id)
       .map((m) => ({
         ...publicUser(m.user_id),
+        role: m.role,
         readSeq: m.read_seq,
         deliveredSeq: m.delivered_seq,
       }));
@@ -433,6 +477,7 @@ function createChatServer(options = {}) {
           id,
           user,
         );
+      if (kind === "group") db.prepare("UPDATE members SET role='admin' WHERE chat_id=? AND user_id=?").run(id, req.user.id);
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
@@ -737,7 +782,18 @@ function createChatServer(options = {}) {
         "SELECT s.*,u.name FROM stories s JOIN users u ON u.id=s.user_id WHERE s.expires>? AND (s.user_id=? OR s.user_id IN (SELECT b.user_id FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=?)) ORDER BY s.created_at DESC LIMIT 100",
       )
       .all(Date.now(), req.user.id, req.user.id);
-    res.json({ stories: rows.map(({media_path,media_mime,media_name,...row}) => ({...row, media: media_path ? {mime:media_mime,filename:media_name,url:"/api/stories/"+row.id+"/media"} : null})) });
+    res.json({
+      stories: rows.map(({ media_path, media_mime, media_name, ...row }) => ({
+        ...row,
+        media: media_path
+          ? {
+              mime: media_mime,
+              filename: media_name,
+              url: "/api/stories/" + row.id + "/media",
+            }
+          : null,
+      })),
+    });
   });
   app.post("/api/stories", auth, (req, res) => {
     const { text, color } = req.body || {};
@@ -745,7 +801,9 @@ function createChatServer(options = {}) {
       return fail(res, 400, "Use 1-500 characters for a text status.");
     if (!allowed(`story:${req.user.id}`, 10, 3600000))
       return fail(res, 429, "Too many status updates. Try again later.");
-    db.prepare("INSERT INTO stories(id,user_id,text,color,created_at,expires) VALUES(?,?,?,?,?,?)").run(
+    db.prepare(
+      "INSERT INTO stories(id,user_id,text,color,created_at,expires) VALUES(?,?,?,?,?,?)",
+    ).run(
       randomUUID(),
       req.user.id,
       text.trim(),
@@ -755,50 +813,138 @@ function createChatServer(options = {}) {
     );
     res.json({ ok: true });
   });
-  const storyUpload=multer({dest:path.join(dataDir,"uploads"),limits:{fileSize:25*1024*1024,files:1,fields:1,fieldSize:2000}});
-  app.post("/api/stories/media",auth,(req,res,next) => {
-    if (!allowed(`story:${req.user.id}`,10,3600000)) return fail(res,429,"Too many status updates. Try again later.");
-    storyUpload.single("file")(req,res,next);
-  },asyncRoute(async (req,res) => {
-    const f=req.file; if (!f) return fail(res,400,"Choose a photo or video.");
-    const discard=(message) => {fs.rmSync(f.path,{force:true}); return fail(res,400,message);};
-    const text=req.body?.text || "";
-    if (typeof text!=="string" || text.length>500) return discard("Use a caption up to 500 characters.");
-    const {fileTypeFromFile}=await import("file-type");
-    let type; try {type=await fileTypeFromFile(f.path);} catch {}
-    if (!type || !["image/png","image/jpeg","image/gif","image/webp","video/mp4","video/webm","video/ogg"].includes(type.mime)) return discard("Choose a PNG, JPEG, GIF, WebP, MP4, WebM or OGG photo/video.");
-    const id=randomUUID(),createdAt=new Date().toISOString(),expires=Date.now()+86400000;
-    const filename=path.basename(f.originalname).replace(/[\u0000-\u001f\u007f]/g,"").slice(0,120)||"status";
-    db.prepare("INSERT INTO stories(id,user_id,text,color,created_at,expires,media_path,media_mime,media_name) VALUES(?,?,?,?,?,?,?,?,?)").run(id,req.user.id,text.trim(),0,createdAt,expires,f.path,type.mime,filename);
-    res.status(201).json({id,expires});
-  }));
-  const canViewStory = (story,user) => story.user_id===user || !!db.prepare("SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=? LIMIT 1").get(user,story.user_id);
-  app.post("/api/stories/:id/view",auth,(req,res)=>{
-    const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
-    if (!story) return fail(res,404,"Status not found or expired.");
-    if (!canViewStory(story,req.user.id)) return fail(res,403,"This status is not shared with you.");
-    if(story.user_id!==req.user.id) db.prepare("INSERT OR IGNORE INTO story_views(story_id,user_id,viewed_at) VALUES(?,?,?)").run(story.id,req.user.id,new Date().toISOString());
-    res.json({ok:true});
+  const storyUpload = multer({
+    dest: path.join(dataDir, "uploads"),
+    limits: {
+      fileSize: 25 * 1024 * 1024,
+      files: 1,
+      fields: 1,
+      fieldSize: 2000,
+    },
   });
-  app.get("/api/stories/:id/views",auth,(req,res)=>{
-    const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
-    if(!story) return fail(res,404,"Status not found or expired.");
-    if(story.user_id!==req.user.id) return fail(res,403,"Only the status author can see viewers.");
-    const views=db.prepare("SELECT v.user_id,v.viewed_at,u.name FROM story_views v JOIN users u ON u.id=v.user_id WHERE v.story_id=? ORDER BY v.viewed_at DESC").all(story.id);
-    res.json({views});
+  app.post(
+    "/api/stories/media",
+    auth,
+    (req, res, next) => {
+      if (!allowed(`story:${req.user.id}`, 10, 3600000))
+        return fail(res, 429, "Too many status updates. Try again later.");
+      storyUpload.single("file")(req, res, next);
+    },
+    asyncRoute(async (req, res) => {
+      const f = req.file;
+      if (!f) return fail(res, 400, "Choose a photo or video.");
+      const discard = (message) => {
+        fs.rmSync(f.path, { force: true });
+        return fail(res, 400, message);
+      };
+      const text = req.body?.text || "";
+      if (typeof text !== "string" || text.length > 500)
+        return discard("Use a caption up to 500 characters.");
+      const { fileTypeFromFile } = await import("file-type");
+      let type;
+      try {
+        type = await fileTypeFromFile(f.path);
+      } catch {}
+      if (
+        !type ||
+        ![
+          "image/png",
+          "image/jpeg",
+          "image/gif",
+          "image/webp",
+          "video/mp4",
+          "video/webm",
+          "video/ogg",
+        ].includes(type.mime)
+      )
+        return discard(
+          "Choose a PNG, JPEG, GIF, WebP, MP4, WebM or OGG photo/video.",
+        );
+      const id = randomUUID(),
+        createdAt = new Date().toISOString(),
+        expires = Date.now() + 86400000;
+      const filename =
+        path
+          .basename(f.originalname)
+          .replace(/[\u0000-\u001f\u007f]/g, "")
+          .slice(0, 120) || "status";
+      db.prepare(
+        "INSERT INTO stories(id,user_id,text,color,created_at,expires,media_path,media_mime,media_name) VALUES(?,?,?,?,?,?,?,?,?)",
+      ).run(
+        id,
+        req.user.id,
+        text.trim(),
+        0,
+        createdAt,
+        expires,
+        f.path,
+        type.mime,
+        filename,
+      );
+      res.status(201).json({ id, expires });
+    }),
+  );
+  const canViewStory = (story, user) =>
+    story.user_id === user ||
+    !!db
+      .prepare(
+        "SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=? LIMIT 1",
+      )
+      .get(user, story.user_id);
+  app.post("/api/stories/:id/view", auth, (req, res) => {
+    const story = db
+      .prepare("SELECT * FROM stories WHERE id=? AND expires>?")
+      .get(req.params.id, Date.now());
+    if (!story) return fail(res, 404, "Status not found or expired.");
+    if (!canViewStory(story, req.user.id))
+      return fail(res, 403, "This status is not shared with you.");
+    if (story.user_id !== req.user.id)
+      db.prepare(
+        "INSERT OR IGNORE INTO story_views(story_id,user_id,viewed_at) VALUES(?,?,?)",
+      ).run(story.id, req.user.id, new Date().toISOString());
+    res.json({ ok: true });
   });
-  app.get("/api/stories/:id/media",auth,(req,res) => {
-    const story=db.prepare("SELECT * FROM stories WHERE id=? AND expires>?").get(req.params.id,Date.now());
-    if (!story || !story.media_path) return fail(res,404,"Status not found or expired.");
-    const shares=story.user_id===req.user.id || db.prepare("SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=? LIMIT 1").get(req.user.id,story.user_id);
-    if (!shares) return fail(res,403,"This status is not shared with you.");
-    res.type(story.media_mime); res.sendFile(story.media_path);
+  app.get("/api/stories/:id/views", auth, (req, res) => {
+    const story = db
+      .prepare("SELECT * FROM stories WHERE id=? AND expires>?")
+      .get(req.params.id, Date.now());
+    if (!story) return fail(res, 404, "Status not found or expired.");
+    if (story.user_id !== req.user.id)
+      return fail(res, 403, "Only the status author can see viewers.");
+    const views = db
+      .prepare(
+        "SELECT v.user_id,v.viewed_at,u.name FROM story_views v JOIN users u ON u.id=v.user_id WHERE v.story_id=? ORDER BY v.viewed_at DESC",
+      )
+      .all(story.id);
+    res.json({ views });
+  });
+  app.get("/api/stories/:id/media", auth, (req, res) => {
+    const story = db
+      .prepare("SELECT * FROM stories WHERE id=? AND expires>?")
+      .get(req.params.id, Date.now());
+    if (!story || !story.media_path)
+      return fail(res, 404, "Status not found or expired.");
+    const shares =
+      story.user_id === req.user.id ||
+      db
+        .prepare(
+          "SELECT 1 FROM members a JOIN members b ON a.chat_id=b.chat_id WHERE a.user_id=? AND b.user_id=? LIMIT 1",
+        )
+        .get(req.user.id, story.user_id);
+    if (!shares) return fail(res, 403, "This status is not shared with you.");
+    res.type(story.media_mime);
+    res.sendFile(story.media_path);
   });
   app.delete("/api/stories/:id", auth, (req, res) => {
-    const story=db.prepare("SELECT * FROM stories WHERE id=? AND user_id=?").get(req.params.id,req.user.id);
-    if (!story) return fail(res,404,"Status not found.");
-    if (story.media_path) fs.rmSync(story.media_path,{force:true});
-    db.prepare("DELETE FROM stories WHERE id=? AND user_id=?").run(req.params.id,req.user.id);
+    const story = db
+      .prepare("SELECT * FROM stories WHERE id=? AND user_id=?")
+      .get(req.params.id, req.user.id);
+    if (!story) return fail(res, 404, "Status not found.");
+    if (story.media_path) fs.rmSync(story.media_path, { force: true });
+    db.prepare("DELETE FROM stories WHERE id=? AND user_id=?").run(
+      req.params.id,
+      req.user.id,
+    );
     res.json({ ok: true });
   });
 
@@ -913,7 +1059,8 @@ function createChatServer(options = {}) {
         400,
         "Messages can be edited for 15 minutes after sending.",
       );
-    if(db.prepare("SELECT message_id FROM polls WHERE message_id=?").get(m.id))return fail(res,400,"Poll questions cannot be edited after creation.");
+    if (db.prepare("SELECT message_id FROM polls WHERE message_id=?").get(m.id))
+      return fail(res, 400, "Poll questions cannot be edited after creation.");
     const text = req.body?.text;
     if (typeof text !== "string" || !text.trim() || text.trim().length > 4000)
       return fail(res, 400, "Use 1-4000 characters.");
@@ -975,8 +1122,8 @@ function createChatServer(options = {}) {
       .get(req.params.id);
     if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id))
       return fail(res, 404, "Group not found.");
-    if (chat.owner_id !== req.user.id)
-      return fail(res, 403, "Only the group owner can change this group.");
+    if (member(chat.id, req.user.id).role !== "admin")
+      return fail(res, 403, "Only group admins can change this group.");
     const name = req.body?.name;
     if (typeof name !== "string" || !name.trim() || name.trim().length > 60)
       return fail(res, 400, "Use a group name of 1-60 characters.");
@@ -990,8 +1137,8 @@ function createChatServer(options = {}) {
       .get(req.params.id);
     if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id))
       return fail(res, 404, "Group not found.");
-    if (chat.owner_id !== req.user.id)
-      return fail(res, 403, "Only the group owner can add members.");
+    if (member(chat.id, req.user.id).role !== "admin")
+      return fail(res, 403, "Only group admins can add members.");
     const id = req.body?.userId;
     if (
       typeof id !== "string" ||
@@ -1017,19 +1164,19 @@ function createChatServer(options = {}) {
       target = req.params.userId;
     if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id))
       return fail(res, 404, "Group not found.");
-    if (chat.owner_id !== req.user.id && target !== req.user.id)
-      return fail(res, 403, "Only the owner can remove other members.");
+    if (target !== req.user.id && (member(chat.id, req.user.id).role !== "admin" || target === chat.owner_id))
+      return fail(res, 403, "Only admins can remove others; the owner must leave voluntarily.");
     if (!member(chat.id, target)) return fail(res, 404, "Member not found.");
     const remaining = db
       .prepare(
-        "SELECT user_id FROM members WHERE chat_id=? AND user_id<>? ORDER BY user_id",
+        "SELECT user_id FROM members WHERE chat_id=? AND user_id<>? ORDER BY (role='admin') DESC,user_id",
       )
       .all(chat.id, target);
-    if (target === chat.owner_id && remaining.length)
-      db.prepare("UPDATE chats SET owner_id=? WHERE id=?").run(
-        remaining[0].user_id,
-        chat.id,
-      );
+    if (target === chat.owner_id && remaining.length) {
+      db.prepare("UPDATE chats SET owner_id=? WHERE id=?").run(remaining[0].user_id, chat.id);
+      db.prepare("UPDATE members SET role='admin' WHERE chat_id=? AND user_id=?").run(chat.id, remaining[0].user_id);
+    }
+    if (!remaining.length) db.prepare("DELETE FROM group_invites WHERE chat_id=?").run(chat.id);
     db.prepare("DELETE FROM members WHERE chat_id=? AND user_id=?").run(
       chat.id,
       target,
@@ -1039,30 +1186,173 @@ function createChatServer(options = {}) {
     res.json({ ok: true });
   });
 
-  app.post('/api/lock',auth,(req,res)=>{
-    const hash=digest(parseCookie(req.headers.cookie));db.prepare('UPDATE sessions SET locked=1 WHERE hash=?').run(hash);
-    for(const s of io.sockets.sockets.values())if(s.data.tokenHash===hash){s.emit('session:locked');s.disconnect(true);}
-    res.json({ok:true});
+  app.patch("/api/chats/:id/members/:userId/role", auth, (req, res) => {
+    const chat = db.prepare("SELECT * FROM chats WHERE id=?").get(req.params.id);
+    if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id)) return fail(res, 404, "Group not found.");
+    if (member(chat.id, req.user.id).role !== "admin") return fail(res, 403, "Only admins can change roles.");
+    if (req.params.userId === chat.owner_id) return fail(res, 403, "The group owner remains an admin.");
+    if (!["admin", "member"].includes(req.body?.role)) return fail(res, 400, "Choose admin or member.");
+    if (!member(chat.id, req.params.userId)) return fail(res, 404, "Member not found.");
+    db.prepare("UPDATE members SET role=? WHERE chat_id=? AND user_id=?").run(req.body.role, chat.id, req.params.userId);
+    notifyChat(chat.id);
+    res.json({chat:chatView(chat.id, req.user.id)});
   });
-  app.post('/api/unlock',authRate,asyncRoute(async(req,res)=>{
-    const token=parseCookie(req.headers.cookie),hash=token&&digest(token);const session=hash&&db.prepare('SELECT s.*,u.salt,u.password_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.expires>?').get(hash,Date.now());
-    if(!session)return fail(res,401,'Your session expired. Sign in again.');
-    if(typeof req.body?.password!=='string'||req.body.password.length>128)return fail(res,400,'Enter your account password.');
-    const calculated=await scrypt(req.body.password,session.salt,64);if(!timingSafeEqual(calculated,Buffer.from(session.password_hash,'hex')))return fail(res,401,'Password is incorrect.');
-    db.prepare('UPDATE sessions SET locked=0 WHERE hash=?').run(hash);res.json({user:publicUser(session.user_id)});
-  }));
-  app.post('/api/chats/:id/polls',auth,(req,res)=>{
-    if(!member(req.params.id,req.user.id))return fail(res,403,'Not a member.');
-    const {question,options,multiple}=req.body||{};if(typeof question!=='string'||!question.trim()||question.length>250||!Array.isArray(options)||options.length<2||options.length>12||options.some(o=>typeof o!=='string'||!o.trim()||o.length>100)||new Set(options.map(o=>o.trim().toLowerCase())).size!==options.length)return fail(res,400,'Use a question up to 250 characters and 2-12 different options up to 100 characters.');
-    if(!allowed(`send:${req.user.id}`,30,10000))return fail(res,429,'Creating polls too quickly.');
-    const id=randomUUID();db.exec('BEGIN');try{db.prepare('INSERT INTO messages(id,chat_id,sender_id,text,created_at,client_id) VALUES(?,?,?,?,?,?)').run(id,req.params.id,req.user.id,question.trim(),new Date().toISOString(),randomUUID());db.prepare('INSERT INTO polls VALUES(?,?,?)').run(id,JSON.stringify(options.map(o=>o.trim())),multiple?1:0);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
-    const message=messageRow(db.prepare('SELECT * FROM messages WHERE id=?').get(id));for(const u of db.prepare('SELECT user_id FROM members WHERE chat_id=?').all(req.params.id))io.to(userRoom(u.user_id)).emit('message:new',message);notifyChat(req.params.id);res.status(201).json({message});
+  function adminGroup(req, res) {
+    const chat = db.prepare("SELECT * FROM chats WHERE id=?").get(req.params.id);
+    if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id)) { fail(res,404,"Group not found."); return null; }
+    if (member(chat.id,req.user.id).role !== "admin") { fail(res,403,"Only admins can manage invite links."); return null; }
+    return chat;
+  }
+  app.post("/api/chats/:id/invite", auth, (req,res) => {
+    const chat=adminGroup(req,res); if (!chat) return;
+    if (!allowed(`invite:${req.user.id}`,20,60000)) return fail(res,429,"Too many invite changes. Try again shortly.");
+    const token=randomBytes(32).toString("hex"), expires=Date.now()+7*86400000;
+    db.prepare("INSERT INTO group_invites(chat_id,token_hash,expires) VALUES(?,?,?) ON CONFLICT(chat_id) DO UPDATE SET token_hash=excluded.token_hash,expires=excluded.expires").run(chat.id,digest(token),expires);
+    res.json({token,expires});
   });
-  app.put('/api/messages/:id/votes',auth,(req,res)=>{
-    const m=ownMessage(req,res);if(!m)return;const p=db.prepare('SELECT * FROM polls WHERE message_id=?').get(m.id);if(!p||m.deleted_at)return fail(res,400,'Poll unavailable.');
-    const options=JSON.parse(p.options),indices=req.body?.options;if(!Array.isArray(indices)||indices.some(i=>!Number.isInteger(i)||i<0||i>=options.length)||new Set(indices).size!==indices.length||(!p.multiple&&indices.length>1))return fail(res,400,'Choose valid poll options.');
-    if(!allowed(`vote:${req.user.id}`,60,60000))return fail(res,429,'Voting too quickly.');
-    db.prepare('INSERT INTO votes(message_id,user_id,options) VALUES(?,?,?) ON CONFLICT(message_id,user_id) DO UPDATE SET options=excluded.options').run(m.id,req.user.id,JSON.stringify(indices));broadcastMessage(m.id);res.json({ok:true});
+  app.delete("/api/chats/:id/invite", auth, (req,res) => {
+    const chat=adminGroup(req,res); if (!chat) return;
+    db.prepare("DELETE FROM group_invites WHERE chat_id=?").run(chat.id); res.json({ok:true});
+  });
+  function validInvite(token) {
+    if (!/^[a-f0-9]{64}$/.test(token)) return null;
+    return db.prepare("SELECT c.id,c.name,i.expires FROM group_invites i JOIN chats c ON c.id=i.chat_id WHERE i.token_hash=? AND i.expires>? AND EXISTS(SELECT 1 FROM members m WHERE m.chat_id=c.id)").get(digest(token),Date.now());
+  }
+  app.get("/api/invites/:token", auth, (req,res) => {
+    if (!allowed(`invite-read:${req.user.id}`,60,60000)) return fail(res,429,"Too many invite requests.");
+    const chat=validInvite(req.params.token); if (!chat) return fail(res,404,"This invite is invalid or expired.");
+    res.json({group:{name:chat.name,expires:chat.expires,memberCount:db.prepare("SELECT count(*) AS n FROM members WHERE chat_id=?").get(chat.id).n,joined:!!member(chat.id,req.user.id)}});
+  });
+  app.post("/api/invites/:token/join", auth, (req,res) => {
+    if (!allowed(`invite-join:${req.user.id}`,20,60000)) return fail(res,429,"Too many join requests.");
+    const chat=validInvite(req.params.token); if (!chat) return fail(res,404,"This invite is invalid or expired.");
+    if (!member(chat.id,req.user.id)) {
+      if (db.prepare("SELECT count(*) AS n FROM members WHERE chat_id=?").get(chat.id).n>=50) return fail(res,400,"This group is full.");
+      db.prepare("INSERT INTO members(chat_id,user_id) VALUES(?,?)").run(chat.id,req.user.id);
+      notifyChat(chat.id);
+    }
+    res.json({chat:chatView(chat.id,req.user.id)});
+  });
+
+  app.post("/api/lock", auth, (req, res) => {
+    const hash = digest(parseCookie(req.headers.cookie));
+    db.prepare("UPDATE sessions SET locked=1 WHERE hash=?").run(hash);
+    for (const s of io.sockets.sockets.values())
+      if (s.data.tokenHash === hash) {
+        s.emit("session:locked");
+        s.disconnect(true);
+      }
+    res.json({ ok: true });
+  });
+  app.post(
+    "/api/unlock",
+    authRate,
+    asyncRoute(async (req, res) => {
+      const token = parseCookie(req.headers.cookie),
+        hash = token && digest(token);
+      const session =
+        hash &&
+        db
+          .prepare(
+            "SELECT s.*,u.salt,u.password_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.expires>?",
+          )
+          .get(hash, Date.now());
+      if (!session)
+        return fail(res, 401, "Your session expired. Sign in again.");
+      if (
+        typeof req.body?.password !== "string" ||
+        req.body.password.length > 128
+      )
+        return fail(res, 400, "Enter your account password.");
+      const calculated = await scrypt(req.body.password, session.salt, 64);
+      if (
+        !timingSafeEqual(calculated, Buffer.from(session.password_hash, "hex"))
+      )
+        return fail(res, 401, "Password is incorrect.");
+      db.prepare("UPDATE sessions SET locked=0 WHERE hash=?").run(hash);
+      res.json({ user: publicUser(session.user_id) });
+    }),
+  );
+  app.post("/api/chats/:id/polls", auth, (req, res) => {
+    if (!member(req.params.id, req.user.id))
+      return fail(res, 403, "Not a member.");
+    const { question, options, multiple } = req.body || {};
+    if (
+      typeof question !== "string" ||
+      !question.trim() ||
+      question.length > 250 ||
+      !Array.isArray(options) ||
+      options.length < 2 ||
+      options.length > 12 ||
+      options.some(
+        (o) => typeof o !== "string" || !o.trim() || o.length > 100,
+      ) ||
+      new Set(options.map((o) => o.trim().toLowerCase())).size !==
+        options.length
+    )
+      return fail(
+        res,
+        400,
+        "Use a question up to 250 characters and 2-12 different options up to 100 characters.",
+      );
+    if (!allowed(`send:${req.user.id}`, 30, 10000))
+      return fail(res, 429, "Creating polls too quickly.");
+    const id = randomUUID();
+    db.exec("BEGIN");
+    try {
+      db.prepare(
+        "INSERT INTO messages(id,chat_id,sender_id,text,created_at,client_id) VALUES(?,?,?,?,?,?)",
+      ).run(
+        id,
+        req.params.id,
+        req.user.id,
+        question.trim(),
+        new Date().toISOString(),
+        randomUUID(),
+      );
+      db.prepare("INSERT INTO polls VALUES(?,?,?)").run(
+        id,
+        JSON.stringify(options.map((o) => o.trim())),
+        multiple ? 1 : 0,
+      );
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+    const message = messageRow(
+      db.prepare("SELECT * FROM messages WHERE id=?").get(id),
+    );
+    for (const u of db
+      .prepare("SELECT user_id FROM members WHERE chat_id=?")
+      .all(req.params.id))
+      io.to(userRoom(u.user_id)).emit("message:new", message);
+    notifyChat(req.params.id);
+    res.status(201).json({ message });
+  });
+  app.put("/api/messages/:id/votes", auth, (req, res) => {
+    const m = ownMessage(req, res);
+    if (!m) return;
+    const p = db.prepare("SELECT * FROM polls WHERE message_id=?").get(m.id);
+    if (!p || m.deleted_at) return fail(res, 400, "Poll unavailable.");
+    const options = JSON.parse(p.options),
+      indices = req.body?.options;
+    if (
+      !Array.isArray(indices) ||
+      indices.some(
+        (i) => !Number.isInteger(i) || i < 0 || i >= options.length,
+      ) ||
+      new Set(indices).size !== indices.length ||
+      (!p.multiple && indices.length > 1)
+    )
+      return fail(res, 400, "Choose valid poll options.");
+    if (!allowed(`vote:${req.user.id}`, 60, 60000))
+      return fail(res, 429, "Voting too quickly.");
+    db.prepare(
+      "INSERT INTO votes(message_id,user_id,options) VALUES(?,?,?) ON CONFLICT(message_id,user_id) DO UPDATE SET options=excluded.options",
+    ).run(m.id, req.user.id, JSON.stringify(indices));
+    broadcastMessage(m.id);
+    res.json({ ok: true });
   });
 
   function authorized(socket, chat) {
@@ -1076,7 +1366,7 @@ function createChatServer(options = {}) {
     const token = parseCookie(socket.handshake.headers.cookie),
       user = tokenUser(token);
     if (!user) return next(new Error("Sign in required."));
-    if(user.locked)return next(new Error("App locked."));
+    if (user.locked) return next(new Error("App locked."));
     const origin = socket.handshake.headers.origin;
     const host = socket.handshake.headers.host;
     if (origin) {

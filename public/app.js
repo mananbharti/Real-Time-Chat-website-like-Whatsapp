@@ -6,11 +6,62 @@ const el = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
-const emojiAssets={"🎉": "1F389", "😢": "1F622", "😎": "1F60E", "📷": "1F4F7", "💯": "1F4AF", "✅": "2705", "😊": "1F60A", "🙏": "1F64F", "😭": "1F62D", "🙌": "1F64C", "🤔": "1F914", "👏": "1F44F", "❤️": "2764-FE0F", "😮": "1F62E", "✨": "2728", "🎙": "1F399", "☕": "2615", "👀": "1F440", "😀": "1F600", "😂": "1F602", "👎": "1F44E", "💚": "1F49A", "😍": "1F60D", "🥳": "1F973", "👍": "1F44D", "🔥": "1F525"};
-function colorEmoji(root){
- const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
- const keys=Object.keys(emojiAssets).sort((a,b)=>b.length-a.length);
- for(const node of nodes){if(node.parentElement?.closest('a,.sr-only'))continue;const text=node.data;let cursor=0,fragment=document.createDocumentFragment(),plain='';while(cursor<text.length){const found=keys.find(e=>text.startsWith(e,cursor));if(found){if(plain){fragment.append(document.createTextNode(plain));plain='';}const image=document.createElement('img');image.className='color-emoji';image.src='/emoji/'+emojiAssets[found]+'.svg';image.alt='';image.setAttribute('aria-hidden','true');const spoken=document.createElement('span');spoken.className='sr-only';spoken.textContent=found;fragment.append(image,spoken);cursor+=found.length;}else{plain+=text[cursor++];}}if(plain)fragment.append(document.createTextNode(plain));node.replaceWith(fragment);}
+const emojiAssets = Object.fromEntries(
+  emojiCatalog.flatMap((item) => [
+    [item.emoji, item.asset],
+    [item.emoji.replaceAll("\ufe0f", ""), item.asset],
+  ]),
+);
+const emojiTrie = {};
+for (const [value, asset] of Object.entries(emojiAssets)) {
+  let node = emojiTrie;
+  for (const ch of value) node = node[ch] ||= {};
+  node.value = value;
+  node.asset = asset;
+}
+function colorEmoji(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    if (node.parentElement?.closest("a,.sr-only")) continue;
+    const text = node.data;
+    let cursor = 0,
+      fragment = document.createDocumentFragment(),
+      plain = "";
+    while (cursor < text.length) {
+      let trie = emojiTrie,
+        found,
+        offset = cursor;
+      while (offset < text.length) {
+        const ch = String.fromCodePoint(text.codePointAt(offset));
+        trie = trie[ch];
+        if (!trie) break;
+        offset += ch.length;
+        if (trie.value) found = trie.value;
+      }
+      if (found) {
+        if (plain) {
+          fragment.append(document.createTextNode(plain));
+          plain = "";
+        }
+        const image = document.createElement("img");
+        image.className = "color-emoji";
+        image.src = "/emoji/" + emojiAssets[found];
+        image.alt = "";
+        image.setAttribute("aria-hidden", "true");
+        const spoken = document.createElement("span");
+        spoken.className = "sr-only";
+        spoken.textContent = found;
+        fragment.append(image, spoken);
+        cursor += found.length;
+      } else {
+        plain += text[cursor++];
+      }
+    }
+    if (plain) fragment.append(document.createTextNode(plain));
+    node.replaceWith(fragment);
+  }
 }
 
 let me = null,
@@ -69,8 +120,8 @@ async function api(url, options = {}) {
   });
   const result = await response.json();
   if (!response.ok) {
-    if(response.status===423)showLock();
-    else if (response.status === 401 && me && url!=="/api/unlock") showAuth();
+    if (response.status === 423) showLock();
+    else if (response.status === 401 && me && url !== "/api/unlock") showAuth();
     throw new Error(result.error || "Request failed.");
   }
   return result;
@@ -124,11 +175,13 @@ function preview(m) {
         : "📄 " + (m.attachment?.filename || "Attachment");
 }
 function clock(date) {
-  return new Date(date).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).toLowerCase();
+  return new Date(date)
+    .toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    .toLowerCase();
 }
 function tickState(m, chat) {
   const others = chat.members.filter((u) => u.id !== me.id);
@@ -288,9 +341,15 @@ function markRead() {
 function buildMessage(m) {
   const mine = m.senderId === me.id,
     c = active();
-  const previous=messages[messages.findIndex(x=>x.id===m.id)-1];
-  const hasTail=!previous||previous.senderId!==m.senderId||Date.parse(m.createdAt)-Date.parse(previous.createdAt)>300000;
-  const li = el("li", `message${mine ? " mine" : ""}${hasTail?" has-tail":""}`);
+  const previous = messages[messages.findIndex((x) => x.id === m.id) - 1];
+  const hasTail =
+    !previous ||
+    previous.senderId !== m.senderId ||
+    Date.parse(m.createdAt) - Date.parse(previous.createdAt) > 300000;
+  const li = el(
+    "li",
+    `message${mine ? " mine" : ""}${hasTail ? " has-tail" : ""}`,
+  );
   li.dataset.messageId = m.id;
   if (c.kind === "group" && !mine && hasTail)
     li.append(el("span", "message-author", m.senderName));
@@ -323,7 +382,7 @@ function buildMessage(m) {
       });
       li.append(q);
     }
-    if(m.poll)li.append(buildPoll(m));
+    if (m.poll) li.append(buildPoll(m));
     if (m.attachment) {
       const a = m.attachment,
         url = "/api/attachments/" + a.id;
@@ -601,7 +660,7 @@ async function start(user) {
       toast(e.message);
     }
   });
-  socket.on("session:locked",()=>showLock());
+  socket.on("session:locked", () => showLock());
   socket.on("disconnect", (reason) => {
     $("connection-status").textContent = "Offline · reconnecting";
     updateComposer();
@@ -613,7 +672,7 @@ async function start(user) {
   socket.on("connect_error", (e) => {
     $("connection-status").textContent = "Connection interrupted";
     if (/Sign in/.test(e.message)) showAuth();
-    if(/App locked/.test(e.message))showLock();
+    if (/App locked/.test(e.message)) showLock();
   });
   socket.on("chat-updated", ({ chat }) => {
     chats.set(chat.id, chat);
@@ -989,44 +1048,6 @@ $("attach-button").addEventListener("click", () => $("file-input").click());
 $("file-input").addEventListener("change", (e) =>
   uploadFile(e.target.files[0]),
 );
-const emojis = [
-  "😀",
-  "😂",
-  "😊",
-  "😍",
-  "🥳",
-  "😎",
-  "🤔",
-  "😭",
-  "🙏",
-  "👍",
-  "👎",
-  "👏",
-  "🙌",
-  "❤️",
-  "💚",
-  "🔥",
-  "✨",
-  "🎉",
-  "💯",
-  "✅",
-  "👀",
-  "☕",
-  "🎙",
-];
-for (const emoji of emojis) {
-  const b = el("button", "", emoji);
-  b.type = "button";
-  b.setAttribute("aria-label", "Insert " + emoji);
-  b.addEventListener("click", () => {
-    const input = $("message-input");
-    input.setRangeText(emoji, input.selectionStart, input.selectionEnd, "end");
-    input.dispatchEvent(new Event("input"));
-    input.focus();
-  });
-  colorEmoji(b);
-  $("emoji-picker").append(b);
-}
 $("emoji-button").addEventListener(
   "click",
   () => ($("emoji-picker").hidden = !$("emoji-picker").hidden),
@@ -1247,7 +1268,7 @@ const toolsDialog = el("dialog");
 toolsDialog.id = "tools-dialog";
 document.body.append(toolsDialog);
 function showTools(title, point) {
-  toolsDialog.querySelectorAll("video,audio").forEach(media=>media.pause());
+  toolsDialog.querySelectorAll("video,audio").forEach((media) => media.pause());
   toolsDialog.replaceChildren();
   toolsDialog.classList.toggle("context-tools", !!point);
   if (point) {
@@ -1322,7 +1343,8 @@ function showMessageMenu(m, point) {
     }
     box.append(reactions);
     if (
-      !m.poll && m.senderId === me.id &&
+      !m.poll &&
+      m.senderId === me.id &&
       Date.now() - Date.parse(m.createdAt) < 15 * 60000
     )
       toolButton(box, "Edit message", () => editMessage(m));
@@ -1345,37 +1367,94 @@ function showMessageMenu(m, point) {
       renderMessages();
       toolsDialog.close();
     });
-    if(!m.poll)toolButton(box, "Forward", () => {
-      const list = showTools("Forward to");
-      for (const c of chats.values())
-        toolButton(list, c.name, async () => {
-          await api(`/api/messages/${m.id}/forward`, {
-            method: "POST",
-            body: JSON.stringify({ chatId: c.id }),
+    if (!m.poll)
+      toolButton(box, "Forward", () => {
+        const list = showTools("Forward to");
+        for (const c of chats.values())
+          toolButton(list, c.name, async () => {
+            await api(`/api/messages/${m.id}/forward`, {
+              method: "POST",
+              body: JSON.stringify({ chatId: c.id }),
+            });
+            toolsDialog.close();
+            toast("Message forwarded.");
           });
-          toolsDialog.close();
-          toast("Message forwarded.");
-        });
-    });
+      });
   }
   if (m.senderId === me.id)
     toolButton(box, "Message info", async () => {
       const result = await api(`/api/messages/${m.id}/info`),
         info = showTools("Message info");
       info.classList.add("message-info-drawer");
-      const quoted=el("section","receipt-message-preview");
-      const bubble=el("div","receipt-preview-bubble",m.text || (m.poll ? m.poll.question : m.attachment?.filename || "Deleted message"));
-      quoted.append(bubble,el("time","",new Date(result.createdAt).toLocaleString()));
+      const quoted = el("section", "receipt-message-preview");
+      const bubble = el(
+        "div",
+        "receipt-preview-bubble",
+        m.text ||
+          (m.poll
+            ? m.poll.question
+            : m.attachment?.filename || "Deleted message"),
+      );
+      const shortTime = new Date(result.createdAt)
+        .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        .toLowerCase();
+      const stamp = el("span", "receipt-bubble-stamp", shortTime);
+      bubble.append(stamp);
+      quoted.append(bubble);
       info.append(quoted);
-      const receiptMembers=active().members.filter(u=>u.id!==me.id);
-      for (const [title,key] of [["Read by","read_at"],["Delivered to","delivered_at"]]) {
-        const section=el("section","receipt-section"), heading=el("h3","receipt-heading");
-        const tick=el("span","receipt-tick",key==="read_at"?"✓✓":"✓✓");tick.classList.toggle("read",key==="read_at");
-        heading.append(tick,el("span","",title));section.append(heading);
+      const receiptMembers = active().members.filter((u) => u.id !== me.id);
+      const direct = active().kind === "direct";
+      info.classList.toggle("direct-receipts", direct);
+      const receiptTime = (value) => {
+        if (!value) return "Not yet";
+        const date = new Date(value),
+          today = new Date();
+        return (
+          (date.toDateString() === today.toDateString()
+            ? "Today"
+            : date.toLocaleDateString()) +
+          " at " +
+          date
+            .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+            .toLowerCase()
+        );
+      };
+      for (const [title, key] of [
+        [direct ? "Read" : "Read by", "read_at"],
+        [direct ? "Delivered" : "Delivered to", "delivered_at"],
+      ]) {
+        const section = el("section", "receipt-section"),
+          heading = el("h3", "receipt-heading");
+        const tick = el("span", "receipt-tick", "✓✓");
+        tick.classList.toggle("read", key === "read_at");
+        heading.append(tick, el("span", "", title));
+        section.append(heading);
+        if (direct) {
+          const receipt = result.receipts.find(
+            (r) => r.user_id === receiptMembers[0]?.id,
+          );
+          section.append(
+            el("time", "receipt-direct-time", receiptTime(receipt?.[key])),
+          );
+          info.append(section);
+          continue;
+        }
         for (const user of receiptMembers) {
-          const receipt=result.receipts.find(r=>r.user_id===user.id),row=el("div","receipt-person"),text=el("div");
-          text.append(el("strong","",user.name),el("time","",receipt?.[key]?new Date(receipt[key]).toLocaleString():"Not yet"));
-          row.append(userAvatar(user),text);section.append(row);
+          const receipt = result.receipts.find((r) => r.user_id === user.id),
+            row = el("div", "receipt-person"),
+            text = el("div");
+          text.append(
+            el("strong", "", user.name),
+            el(
+              "time",
+              "",
+              receipt?.[key]
+                ? new Date(receipt[key]).toLocaleString()
+                : "Not yet",
+            ),
+          );
+          row.append(userAvatar(user), text);
+          section.append(row);
         }
         info.append(section);
       }
@@ -1466,7 +1545,7 @@ function appendRenderedMessage(m, force = false) {
   searchMessages();
 }
 const statusButton = el("button", "icon-button", "◉");
-statusButton.id="status-button";
+statusButton.id = "status-button";
 statusButton.type = "button";
 statusButton.setAttribute("aria-label", "Status updates");
 statusButton.title = "Status updates";
@@ -1501,8 +1580,18 @@ async function showStatuses() {
     });
   });
   toolButton(box, "＋ Add a photo or video status", showMediaStatusComposer);
-  box.append(el("p", "info-note", "Visible to people who currently share a conversation with you. Text, photo and video statuses expire after 24 hours."));
-  result.stories.forEach((story,index) => toolButton(box,story.name+" · "+clock(story.created_at),()=>openStoryPlayback(result.stories,index)));
+  box.append(
+    el(
+      "p",
+      "info-note",
+      "Visible to people who currently share a conversation with you. Text, photo and video statuses expire after 24 hours.",
+    ),
+  );
+  result.stories.forEach((story, index) =>
+    toolButton(box, story.name + " · " + clock(story.created_at), () =>
+      openStoryPlayback(result.stories, index),
+    ),
+  );
   if (!result.stories.length)
     box.append(el("p", "info-note", "No recent status updates."));
 }
@@ -1531,16 +1620,28 @@ showAccount = function () {
     const portrait = userAvatar(me);
     portrait.classList.add("profile-editor-avatar");
     form.append(portrait);
-    form.append(el("label", "profile-about-label", "About"), about,
+    form.append(
+      el("label", "profile-about-label", "About"),
+      about,
       el("p", "profile-about-duration", "Until I change it"),
-      el("label", "profile-name-label", "Name"), name,
+      el("label", "profile-name-label", "Name"),
+      name,
       el("label", "profile-handle-label", "Username"),
-      el("p", "profile-editor-handle", "@" + me.handle));
-    for (const [field, label, cls] of [[about, "Edit about", "edit-about"], [name, "Edit name", "edit-name"]]) {
+      el("p", "profile-editor-handle", "@" + me.handle),
+    );
+    for (const [field, label, cls] of [
+      [about, "Edit about", "edit-about"],
+      [name, "Edit name", "edit-name"],
+    ]) {
       const pencil = el("button", "profile-field-edit icon-button " + cls);
-      pencil.type = "button"; pencil.setAttribute("aria-label", label);
-      pencil.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 4 4 4L7 21H3v-4L16 4Z"/></svg>';
-      pencil.addEventListener("click", () => { field.focus(); field.select(); });
+      pencil.type = "button";
+      pencil.setAttribute("aria-label", label);
+      pencil.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 4 4 4L7 21H3v-4L16 4Z"/></svg>';
+      pencil.addEventListener("click", () => {
+        field.focus();
+        field.select();
+      });
       form.append(pencil);
     }
     toolButton(form, "Save profile", async () => {
@@ -1621,6 +1722,12 @@ galleryButton.addEventListener("click", async () => {
       const a = m.attachment,
         link = el("a", "gallery-item");
       link.href = "/api/attachments/" + a.id;
+      if (/^(image|video)\//.test(a.mime))
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          toolsDialog.close();
+          openMediaViewer(m, result.messages);
+        });
       if(/^(image|video)\//.test(a.mime))link.addEventListener("click",e=>{e.preventDefault();toolsDialog.close();openMediaViewer(m,result.messages)});
       else{link.target="_blank";link.rel="noopener"}
       if (a.mime.startsWith("image/")) {
@@ -1948,7 +2055,9 @@ groupTools.addEventListener("click", () => {
   box.append(
     el("p", "info-note", chat.name + " · " + chat.members.length + " members"),
   );
-  const isAdmin = chat.members.some(u => u.id === me.id && u.role === "admin");
+  const isAdmin = chat.members.some(
+    (u) => u.id === me.id && u.role === "admin",
+  );
   if (isAdmin) {
     toolButton(box, "Invite via link", () => showInviteManager(chat));
     toolButton(box, "Rename group", () => {
@@ -1992,19 +2101,51 @@ groupTools.addEventListener("click", () => {
     const row = el("div", "info-member");
     row.append(
       userAvatar(user),
-      el("span", "", user.name + (user.id === chat.ownerId ? " · owner" : user.role === "admin" ? " · admin" : "")),
+      el(
+        "span",
+        "",
+        user.name +
+          (user.id === chat.ownerId
+            ? " · owner"
+            : user.role === "admin"
+              ? " · admin"
+              : ""),
+      ),
     );
     if (isAdmin && user.id !== chat.ownerId) {
-      const role = el("button", "member-role", user.role === "admin" ? "Dismiss admin" : "Make admin");
+      const role = el(
+        "button",
+        "member-role",
+        user.role === "admin" ? "Dismiss admin" : "Make admin",
+      );
       role.type = "button";
-      role.setAttribute("aria-label", (user.role === "admin" ? "Dismiss admin " : "Make admin ") + user.name);
+      role.setAttribute(
+        "aria-label",
+        (user.role === "admin" ? "Dismiss admin " : "Make admin ") + user.name,
+      );
       role.addEventListener("click", async () => {
-        if (!confirm((user.role === "admin" ? "Remove admin rights from " : "Give admin rights to ") + user.name + "?")) return;
+        if (
+          !confirm(
+            (user.role === "admin"
+              ? "Remove admin rights from "
+              : "Give admin rights to ") +
+              user.name +
+              "?",
+          )
+        )
+          return;
         try {
-          await api(`/api/chats/${chat.id}/members/${user.id}/role`, {method:"PATCH",body:JSON.stringify({role:user.role === "admin" ? "member" : "admin"})});
+          await api(`/api/chats/${chat.id}/members/${user.id}/role`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              role: user.role === "admin" ? "member" : "admin",
+            }),
+          });
           await refreshChats();
           groupTools.click();
-        } catch (e) { toast(e.message); }
+        } catch (e) {
+          toast(e.message);
+        }
       });
       row.append(role);
     }
@@ -2053,303 +2194,1109 @@ groupTools.hidden = true;
 
 // Poll options are server-backed and vote changes are broadcast to every member.
 function buildPoll(message) {
-  const box=el('section','poll-card'),poll=message.poll;
-  box.append(el('h3','poll-question',message.text),el('p','poll-hint',poll.multiple?'Select one or more':'Select one'));
-  const mine=poll.votes.find(v=>v.userId===me.id)?.options||[];
-  const total=poll.votes.filter(v=>v.options.length).length;
-  poll.options.forEach((label,index)=>{
-    const count=poll.votes.filter(v=>v.options.includes(index)).length;
-    const button=el('button','poll-option'+(mine.includes(index)?' chosen':''));button.type='button';
-    button.setAttribute('aria-pressed',String(mine.includes(index)));button.setAttribute('aria-label','Vote for '+label);
-    const line=el('span','poll-option-line');line.append(el('span','poll-circle',mine.includes(index)?'✓':''),el('span','',label),el('span','poll-count',String(count)));
-    const track=el('span','poll-track'),bar=el('span','poll-bar');bar.style.width=(total?count/total*100:0)+'%';track.append(bar);button.append(line,track);
-    button.addEventListener('click',async()=>{button.disabled=true;try{const next=poll.multiple?(mine.includes(index)?mine.filter(i=>i!==index):[...mine,index]):(mine.includes(index)?[]:[index]);await api(`/api/messages/${message.id}/votes`,{method:'PUT',body:JSON.stringify({options:next})});}catch(e){toast(e.message);}finally{button.disabled=false;}});box.append(button);
+  const box = el("section", "poll-card"),
+    poll = message.poll;
+  box.append(
+    el("h3", "poll-question", message.text),
+    el("p", "poll-hint", poll.multiple ? "Select one or more" : "Select one"),
+  );
+  const mine = poll.votes.find((v) => v.userId === me.id)?.options || [];
+  const total = poll.votes.filter((v) => v.options.length).length;
+  poll.options.forEach((label, index) => {
+    const count = poll.votes.filter((v) => v.options.includes(index)).length;
+    const button = el(
+      "button",
+      "poll-option" + (mine.includes(index) ? " chosen" : ""),
+    );
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(mine.includes(index)));
+    button.setAttribute("aria-label", "Vote for " + label);
+    const line = el("span", "poll-option-line");
+    line.append(
+      el("span", "poll-circle", mine.includes(index) ? "✓" : ""),
+      el("span", "", label),
+      el("span", "poll-count", String(count)),
+    );
+    const track = el("span", "poll-track"),
+      bar = el("span", "poll-bar");
+    bar.style.width = (total ? (count / total) * 100 : 0) + "%";
+    track.append(bar);
+    button.append(line, track);
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const next = poll.multiple
+          ? mine.includes(index)
+            ? mine.filter((i) => i !== index)
+            : [...mine, index]
+          : mine.includes(index)
+            ? []
+            : [index];
+        await api(`/api/messages/${message.id}/votes`, {
+          method: "PUT",
+          body: JSON.stringify({ options: next }),
+        });
+      } catch (e) {
+        toast(e.message);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    box.append(button);
   });
-  const details=el('button','poll-details','View votes · '+total+' voter'+(total===1?'':'s'));details.type='button';details.addEventListener('click',()=>{const list=showTools('Poll votes');list.append(el('p','info-note','Votes are visible to all chat members.'));for(const vote of poll.votes.filter(v=>v.options.length))list.append(el('p','info-note',vote.name+': '+vote.options.map(i=>poll.options[i]).join(', ')));if(!total)list.append(el('p','info-note','No votes yet.'));});box.append(details);return box;
+  const details = el(
+    "button",
+    "poll-details",
+    "View votes · " + total + " voter" + (total === 1 ? "" : "s"),
+  );
+  details.type = "button";
+  details.addEventListener("click", () => {
+    const list = showTools("Poll votes");
+    list.append(el("p", "info-note", "Votes are visible to all chat members."));
+    for (const vote of poll.votes.filter((v) => v.options.length))
+      list.append(
+        el(
+          "p",
+          "info-note",
+          vote.name +
+            ": " +
+            vote.options.map((i) => poll.options[i]).join(", "),
+        ),
+      );
+    if (!total) list.append(el("p", "info-note", "No votes yet."));
+  });
+  box.append(details);
+  return box;
 }
-function createPoll(){
-  if(!active())return;const chatId=activeId,box=showTools('Create poll'),question=el('input'),fields=el('div','poll-fields');question.placeholder='Ask a question';question.maxLength=250;question.setAttribute('aria-label','Poll question');box.append(el('label','','Question'),question,el('label','','Options'),fields);
-  const add=()=>{const input=el('input');input.maxLength=100;input.placeholder='Add an option';input.setAttribute('aria-label','Poll option '+(fields.children.length+1));fields.append(input);};add();add();
-  const more=toolButton(box,'Add option',()=>{if(fields.children.length<12)add();if(fields.children.length>=12)more.hidden=true;});
-  const multiple=el('input');multiple.type='checkbox';multiple.checked=true;multiple.id='poll-multiple';const label=el('label','poll-multiple','Allow multiple answers');label.prepend(multiple);box.append(label,el('p','info-note','Votes are visible to all chat members.'));
-  toolButton(box,'Send poll',async()=>{await api(`/api/chats/${chatId}/polls`,{method:'POST',body:JSON.stringify({question:question.value,options:[...fields.children].map(x=>x.value).filter(x=>x.trim()),multiple:multiple.checked})});toolsDialog.close();});question.focus();
+function createPoll() {
+  if (!active()) return;
+  const chatId = activeId,
+    box = showTools("Create poll"),
+    question = el("input"),
+    fields = el("div", "poll-fields");
+  question.placeholder = "Ask a question";
+  question.maxLength = 250;
+  question.setAttribute("aria-label", "Poll question");
+  box.append(
+    el("label", "", "Question"),
+    question,
+    el("label", "", "Options"),
+    fields,
+  );
+  const add = () => {
+    const input = el("input");
+    input.maxLength = 100;
+    input.placeholder = "Add an option";
+    input.setAttribute(
+      "aria-label",
+      "Poll option " + (fields.children.length + 1),
+    );
+    fields.append(input);
+  };
+  add();
+  add();
+  const more = toolButton(box, "Add option", () => {
+    if (fields.children.length < 12) add();
+    if (fields.children.length >= 12) more.hidden = true;
+  });
+  const multiple = el("input");
+  multiple.type = "checkbox";
+  multiple.checked = true;
+  multiple.id = "poll-multiple";
+  const label = el("label", "poll-multiple", "Allow multiple answers");
+  label.prepend(multiple);
+  box.append(
+    label,
+    el("p", "info-note", "Votes are visible to all chat members."),
+  );
+  toolButton(box, "Send poll", async () => {
+    await api(`/api/chats/${chatId}/polls`, {
+      method: "POST",
+      body: JSON.stringify({
+        question: question.value,
+        options: [...fields.children]
+          .map((x) => x.value)
+          .filter((x) => x.trim()),
+        multiple: multiple.checked,
+      }),
+    });
+    toolsDialog.close();
+  });
+  question.focus();
 }
-const pollButton=el('button','icon-button');pollButton.type='button';pollButton.setAttribute('aria-label','Create poll');pollButton.title='Create poll';
-pollButton.innerHTML='<svg viewBox="0 0 24 24"><path d="M5 20V10h3v10M11 20V4h3v16M17 20v-7h3v7"/></svg>';
-pollButton.addEventListener('click',createPoll);$('attach-button').after(pollButton);
+const pollButton = el("button", "icon-button");
+pollButton.type = "button";
+pollButton.setAttribute("aria-label", "Create poll");
+pollButton.title = "Create poll";
+pollButton.innerHTML =
+  '<svg viewBox="0 0 24 24"><path d="M5 20V10h3v10M11 20V4h3v16M17 20v-7h3v7"/></svg>';
+pollButton.addEventListener("click", createPoll);
+$("attach-button").after(pollButton);
 
-let appLocked=false;
-const lockScreen=el('section','lock-screen');lockScreen.hidden=true;lockScreen.id='lock-screen';
-const lockForm=el('form','lock-form'),lockPassword=el('input'),lockError=el('p','lock-error'),unlockButton=el('button','primary','Unlock');
-lockPassword.type='password';lockPassword.autocomplete='current-password';lockPassword.maxLength=128;lockPassword.required=true;lockPassword.setAttribute('aria-label','Unlock password');lockPassword.placeholder='Enter your account password';unlockButton.type='submit';lockError.setAttribute('role','alert');
-const lockSymbol=el('div','lock-symbol');lockSymbol.innerHTML='<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>';
-lockForm.append(lockSymbol,el('h1','','App locked'),el('p','','Enter your account password to unlock your chats.'),lockPassword,lockError,unlockButton);lockScreen.append(lockForm);document.body.append(lockScreen);
-function showLock(){
-  appLocked=true;openGeneration++;socket?.disconnect();if(recorder)stopRecording(true);
-  for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();
-  me=null;chats.clear();messages=[];activeId=null;contacts=[];drafts.clear();typers.clear();reply=null;attachment=null;
-  for(const id of ['messages','chat-list','account-info'])$(id).replaceChildren();
-  $('message-input').value='';$('chat-title').textContent='';$('active-chat').hidden=true;$('empty-chat').hidden=false;$('app').classList.remove('chat-open');
-  $('app').hidden=true;$('auth-screen').hidden=true;lockScreen.hidden=false;lockPassword.value='';lockError.textContent='';lockPassword.focus();
+let appLocked = false;
+const lockScreen = el("section", "lock-screen");
+lockScreen.hidden = true;
+lockScreen.id = "lock-screen";
+const lockForm = el("form", "lock-form"),
+  lockPassword = el("input"),
+  lockError = el("p", "lock-error"),
+  unlockButton = el("button", "primary", "Unlock");
+lockPassword.type = "password";
+lockPassword.autocomplete = "current-password";
+lockPassword.maxLength = 128;
+lockPassword.required = true;
+lockPassword.setAttribute("aria-label", "Unlock password");
+lockPassword.placeholder = "Enter your account password";
+unlockButton.type = "submit";
+lockError.setAttribute("role", "alert");
+const lockSymbol = el("div", "lock-symbol");
+lockSymbol.innerHTML =
+  '<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>';
+lockForm.append(
+  lockSymbol,
+  el("h1", "", "App locked"),
+  el("p", "", "Enter your account password to unlock your chats."),
+  lockPassword,
+  lockError,
+  unlockButton,
+);
+lockScreen.append(lockForm);
+document.body.append(lockScreen);
+function showLock() {
+  appLocked = true;
+  openGeneration++;
+  socket?.disconnect();
+  if (recorder) stopRecording(true);
+  for (const dialog of document.querySelectorAll("dialog[open]"))
+    dialog.close();
+  me = null;
+  chats.clear();
+  messages = [];
+  activeId = null;
+  contacts = [];
+  drafts.clear();
+  typers.clear();
+  reply = null;
+  attachment = null;
+  for (const id of ["messages", "chat-list", "account-info"])
+    $(id).replaceChildren();
+  $("message-input").value = "";
+  $("chat-title").textContent = "";
+  $("active-chat").hidden = true;
+  $("empty-chat").hidden = false;
+  $("app").classList.remove("chat-open");
+  $("app").hidden = true;
+  $("auth-screen").hidden = true;
+  lockScreen.hidden = false;
+  lockPassword.value = "";
+  lockError.textContent = "";
+  lockPassword.focus();
 }
-lockForm.addEventListener('submit',async(event)=>{event.preventDefault();unlockButton.disabled=true;try{const result=await api('/api/unlock',{method:'POST',body:JSON.stringify({password:lockPassword.value})});appLocked=false;lockScreen.hidden=true;lockPassword.value='';await start(result.user);}catch(e){lockError.textContent=e.message;lockPassword.select();}finally{unlockButton.disabled=false;}});
-const unlockedAccount=showAccount;showAccount=function(){unlockedAccount();toolButton($('account-info'),'Lock app',async()=>{await api('/api/lock',{method:'POST',body:'{}'});showLock();});};
+lockForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  unlockButton.disabled = true;
+  try {
+    const result = await api("/api/unlock", {
+      method: "POST",
+      body: JSON.stringify({ password: lockPassword.value }),
+    });
+    appLocked = false;
+    lockScreen.hidden = true;
+    lockPassword.value = "";
+    await start(result.user);
+  } catch (e) {
+    lockError.textContent = e.message;
+    lockPassword.select();
+  } finally {
+    unlockButton.disabled = false;
+  }
+});
+const unlockedAccount = showAccount;
+showAccount = function () {
+  unlockedAccount();
+  toolButton($("account-info"), "Lock app", async () => {
+    await api("/api/lock", { method: "POST", body: "{}" });
+    showLock();
+  });
+};
 // Match the rest of the outline icon set, rather than using a text glyph.
-groupTools.textContent='';groupTools.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v2"/></svg>';
+groupTools.textContent = "";
+groupTools.innerHTML =
+  '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v2"/></svg>';
 
-const notificationNotice=el('div','notification-notice');
-notificationNotice.innerHTML='<svg viewBox="0 0 24 24"><path d="M3 3l18 18M7 7a5 5 0 0 0-1 3v6l-2 2h14M10 21h4M9 4a5 5 0 0 1 8 4v5"/></svg>';
-const notificationText=el('span','','Message notifications are off. '),notificationEnable=el('button','','Turn on'),notificationDismiss=el('button','notification-dismiss','×');notificationEnable.type='button';notificationDismiss.type='button';notificationDismiss.setAttribute('aria-label','Dismiss notification notice');notificationEnable.addEventListener('click',async()=>{if(window.Notification){const p=await Notification.requestPermission();if(p==='granted'){localStorage.setItem('chat-notifications-'+me.id,'yes');notificationNotice.hidden=true;}}});notificationDismiss.addEventListener('click',()=>notificationNotice.hidden=true);notificationText.append(notificationEnable);notificationNotice.append(notificationText,notificationDismiss);document.querySelector('.filters').after(notificationNotice);notificationNotice.hidden=typeof Notification==='undefined'||Notification.permission==='granted';
+const notificationNotice = el("div", "notification-notice");
+notificationNotice.innerHTML =
+  '<svg viewBox="0 0 24 24"><path d="M3 3l18 18M7 7a5 5 0 0 0-1 3v6l-2 2h14M10 21h4M9 4a5 5 0 0 1 8 4v5"/></svg>';
+const notificationText = el("span", "", "Message notifications are off. "),
+  notificationEnable = el("button", "", "Turn on"),
+  notificationDismiss = el("button", "notification-dismiss", "×");
+notificationEnable.type = "button";
+notificationDismiss.type = "button";
+notificationDismiss.setAttribute("aria-label", "Dismiss notification notice");
+notificationEnable.addEventListener("click", async () => {
+  if (window.Notification) {
+    const p = await Notification.requestPermission();
+    if (p === "granted") {
+      localStorage.setItem("chat-notifications-" + me.id, "yes");
+      notificationNotice.hidden = true;
+    }
+  }
+});
+notificationDismiss.addEventListener(
+  "click",
+  () => (notificationNotice.hidden = true),
+);
+notificationText.append(notificationEnable);
+notificationNotice.append(notificationText, notificationDismiss);
+document.querySelector(".filters").after(notificationNotice);
+notificationNotice.hidden =
+  typeof Notification === "undefined" || Notification.permission === "granted";
 // Attachments and polls share the measured plus control, rather than extra composer icons.
-$('attach-button').replaceWith($('attach-button').cloneNode(true));
-$('attach-button').innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
-$('attach-button').addEventListener('click',()=>{const r=$('attach-button').getBoundingClientRect(),box=showTools('Attach',{x:r.x,y:r.y-160});toolButton(box,'Photos, videos and documents',()=>{$('file-input').click();toolsDialog.close();});toolButton(box,'Poll',createPoll);});
-pollButton.hidden=true;
-$('new-chat').innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
-$('mobile-account').before($('mobile-account'));document.querySelector('.sidebar-header>div').append($('new-chat'));
-document.querySelector('.sidebar-header h1').textContent='WhatsApp';
+$("attach-button").replaceWith($("attach-button").cloneNode(true));
+$("attach-button").innerHTML =
+  '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+$("attach-button").addEventListener("click", () => {
+  const r = $("attach-button").getBoundingClientRect(),
+    box = showTools("Attach", { x: r.x, y: r.y - 160 });
+  toolButton(box, "Photos, videos and documents", () => {
+    $("file-input").click();
+    toolsDialog.close();
+  });
+  toolButton(box, "Poll", createPoll);
+});
+pollButton.hidden = true;
+$("new-chat").innerHTML =
+  '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+$("mobile-account").before($("mobile-account"));
+document.querySelector(".sidebar-header>div").append($("new-chat"));
+document.querySelector(".sidebar-header h1").textContent = "WhatsApp";
 
 $("show-chats").after(statusButton);
 
-const baseAccountScreen=showAccount;
-showAccount=function(){
+const baseAccountScreen = showAccount;
+showAccount = function () {
   baseAccountScreen();
-  const dialog=$('account-dialog');dialog.classList.add('settings-drawer');$('account-title').textContent=me.name;
-  const box=$('account-info');const summary=el('section','settings-profile');const profile=userAvatar(me);profile.classList.add('settings-avatar');const thought=el('button','settings-thought',me.about||'Share a thought');thought.type='button';thought.addEventListener('click',()=>box.querySelector('[data-profile-edit]')?.click());summary.append(thought,profile);box.prepend(summary);
-  const search=el('input','settings-search');search.placeholder='Search';search.setAttribute('aria-label','Search settings');dialog.querySelector('header').after(search);search.addEventListener('input',()=>{for(const b of box.querySelectorAll('.tool-row'))b.hidden=!b.textContent.toLowerCase().includes(search.value.toLowerCase());});
-  const edit=[...box.querySelectorAll('.tool-row')].find(b=>b.textContent==='Edit profile');if(edit){edit.dataset.profileEdit='true';edit.classList.add('settings-row');edit.replaceChildren(el('span','settings-row-icon','◎'),el('span','settings-row-title','Profile'),el('small','','Name, profile picture, username'));}
-  for(const b of box.querySelectorAll('.tool-row'))b.classList.add('settings-row');
+  const dialog = $("account-dialog");
+  dialog.classList.add("settings-drawer");
+  $("account-title").textContent = me.name;
+  const box = $("account-info");
+  const summary = el("section", "settings-profile");
+  const profile = userAvatar(me);
+  profile.classList.add("settings-avatar");
+  const thought = el(
+    "button",
+    "settings-thought",
+    me.about || "Share a thought",
+  );
+  thought.type = "button";
+  thought.addEventListener("click", () =>
+    box.querySelector("[data-profile-edit]")?.click(),
+  );
+  summary.append(thought, profile);
+  box.prepend(summary);
+  const search = el("input", "settings-search");
+  search.placeholder = "Search";
+  search.setAttribute("aria-label", "Search settings");
+  dialog.querySelector("header").after(search);
+  search.addEventListener("input", () => {
+    for (const b of box.querySelectorAll(".tool-row"))
+      b.hidden = !b.textContent
+        .toLowerCase()
+        .includes(search.value.toLowerCase());
+  });
+  const edit = [...box.querySelectorAll(".tool-row")].find(
+    (b) => b.textContent === "Edit profile",
+  );
+  if (edit) {
+    edit.dataset.profileEdit = "true";
+    edit.classList.add("settings-row");
+    edit.replaceChildren(
+      el("span", "settings-row-icon", "◎"),
+      el("span", "settings-row-title", "Profile"),
+      el("small", "", "Name, profile picture, username"),
+    );
+  }
+  for (const b of box.querySelectorAll(".tool-row"))
+    b.classList.add("settings-row");
 };
-$('account-dialog').addEventListener('close',()=>{document.querySelectorAll('.settings-search').forEach(e=>e.remove());});
+$("account-dialog").addEventListener("close", () => {
+  document.querySelectorAll(".settings-search").forEach((e) => e.remove());
+});
 
-function showMainMenu(){
- const r=$('mobile-account').getBoundingClientRect(),box=showTools('Main menu',{x:r.x,y:r.bottom+4});box.classList.add('main-context');
- const item=(label,icon,fn)=>{const b=toolButton(box,label,fn);const span=el('span','menu-row-icon');span.innerHTML=menuReferenceIcons[icon]||'';b.prepend(span);return b;};
- item('New group','Reply',()=>{toolsDialog.close();showContacts();$('group-mode').click();});
- item('Starred messages','Star',()=>{toolsDialog.close();showAccount();[...$('account-info').querySelectorAll('.settings-row')].find(x=>x.textContent.startsWith('Chats'))?.click();});
- item('Select chats','Copy',()=>toast('Bulk chat selection is not yet implemented.'));
- item('Mark all as read','Reply',()=>{for(const c of chats.values()){if(c.last)socket?.emit('chat:read',{chatId:c.id,seq:c.last.seq});c.unread=0;}renderChats();toolsDialog.close();});
- item('App lock','Delete',async()=>{await api('/api/lock',{method:'POST',body:'{}'});showLock();});
- item('Log out','Forward',()=>{toolsDialog.close();$('logout').click();});
- box.style.left=Math.max(8,Math.min(r.x,innerWidth-190))+'px';box.style.top=(r.bottom+4)+'px';
+function showMainMenu() {
+  const r = $("mobile-account").getBoundingClientRect(),
+    box = showTools("Main menu", { x: r.x, y: r.bottom + 4 });
+  box.classList.add("main-context");
+  const item = (label, icon, fn) => {
+    const b = toolButton(box, label, fn);
+    const span = el("span", "menu-row-icon");
+    span.innerHTML = menuReferenceIcons[icon] || "";
+    b.prepend(span);
+    return b;
+  };
+  item("New group", "Reply", () => {
+    toolsDialog.close();
+    showContacts();
+    $("group-mode").click();
+  });
+  item("Starred messages", "Star", () => {
+    toolsDialog.close();
+    showAccount();
+    [...$("account-info").querySelectorAll(".settings-row")]
+      .find((x) => x.textContent.startsWith("Chats"))
+      ?.click();
+  });
+  item("Select chats", "Copy", () =>
+    toast("Bulk chat selection is not yet implemented."),
+  );
+  item("Mark all as read", "Reply", () => {
+    for (const c of chats.values()) {
+      if (c.last) socket?.emit("chat:read", { chatId: c.id, seq: c.last.seq });
+      c.unread = 0;
+    }
+    renderChats();
+    toolsDialog.close();
+  });
+  item("App lock", "Delete", async () => {
+    await api("/api/lock", { method: "POST", body: "{}" });
+    showLock();
+  });
+  item("Log out", "Forward", () => {
+    toolsDialog.close();
+    $("logout").click();
+  });
+  box.style.left = Math.max(8, Math.min(r.x, innerWidth - 190)) + "px";
+  box.style.top = r.bottom + 4 + "px";
 }
 
-if(menuReferenceIcons['Ask Meta AI']){ai.innerHTML=menuReferenceIcons['Ask Meta AI'];ai.classList.add('reference-icon');}
+if (menuReferenceIcons["Ask Meta AI"]) {
+  ai.innerHTML = menuReferenceIcons["Ask Meta AI"];
+  ai.classList.add("reference-icon");
+}
 
 // Contact picker follows the measured left drawer, retaining app-account semantics.
-$('contacts-dialog').classList.add('contacts-drawer');
-$('close-contacts').innerHTML='<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6M8 12h12"/></svg>';
-$('contacts-dialog').querySelector('header').prepend($('close-contacts'));
-$('contacts-dialog').querySelector('header').after($('contact-search'));
-$('contact-search').placeholder='Search name or @username';
-const contactActions=el('div','contact-actions');
-const pickerGroup=$('group-mode');pickerGroup.classList.add('contact-option');const groupTitle=el('span','','New group'),groupIcon=el('span','contact-option-icon');groupIcon.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7v6M14 10h6"/></svg>';pickerGroup.replaceChildren(groupIcon,groupTitle);contactActions.append(pickerGroup);
-for(const [title,icon]of [['New contact','M12 5v14M5 12h14'],['New community','M4 20v-3a5 5 0 0 1 10 0v3M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 6v8M14 10h8']]){const b=el('button','contact-option');b.type='button';const circle=el('span','contact-option-icon');circle.innerHTML='<svg viewBox="0 0 24 24"><path d="'+icon+'"/></svg>';b.append(circle,el('span','',title));b.addEventListener('click',()=>toast(title==='New contact'?'Contacts are registered accounts in this app. Search for their username.':'Communities are not implemented in this independent build.'));contactActions.append(b);}
-$('contact-search').after(contactActions);
-const originalContactMode=setContactMode;setContactMode=function(group){originalContactMode(group);contactActions.hidden=group;$('direct-mode').hidden=!group;};
-
-// Contact picker follows the measured left drawer, retaining app-account semantics.
-$('contacts-dialog').classList.add('contacts-drawer');
-$('close-contacts').innerHTML='<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6M8 12h12"/></svg>';
-$('contacts-dialog').querySelector('header').prepend($('close-contacts'));
-$('contacts-dialog').querySelector('header').after($('contact-search'));
-$('contact-search').placeholder='Search name or @username';
-const contactActions=el('div','contact-actions');
-const pickerGroup=$('group-mode');pickerGroup.classList.add('contact-option');const groupTitle=el('span','','New group'),groupIcon=el('span','contact-option-icon');groupIcon.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7v6M14 10h6"/></svg>';pickerGroup.replaceChildren(groupIcon,groupTitle);contactActions.append(pickerGroup);
-for(const [title,icon]of [['New contact','M12 5v14M5 12h14'],['New community','M4 20v-3a5 5 0 0 1 10 0v3M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 6v8M14 10h8']]){const b=el('button','contact-option');b.type='button';const circle=el('span','contact-option-icon');circle.innerHTML='<svg viewBox="0 0 24 24"><path d="'+icon+'"/></svg>';b.append(circle,el('span','',title));b.addEventListener('click',()=>toast(title==='New contact'?'Contacts are registered accounts in this app. Search for their username.':'Communities are not implemented in this independent build.'));contactActions.append(b);}
-$('contact-search').after(contactActions);
-const originalContactMode=setContactMode;setContactMode=function(group){originalContactMode(group);contactActions.hidden=group;$('direct-mode').hidden=!group;};
+$("contacts-dialog").classList.add("contacts-drawer");
+$("close-contacts").innerHTML =
+  '<svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6M8 12h12"/></svg>';
+$("contacts-dialog").querySelector("header").prepend($("close-contacts"));
+$("contacts-dialog").querySelector("header").after($("contact-search"));
+$("contact-search").placeholder = "Search name or @username";
+const contactActions = el("div", "contact-actions");
+const pickerGroup = $("group-mode");
+pickerGroup.classList.add("contact-option");
+const groupTitle = el("span", "", "New group"),
+  groupIcon = el("span", "contact-option-icon");
+groupIcon.innerHTML =
+  '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7v6M14 10h6"/></svg>';
+pickerGroup.replaceChildren(groupIcon, groupTitle);
+contactActions.append(pickerGroup);
+for (const [title, icon] of [
+  ["New contact", "M12 5v14M5 12h14"],
+  [
+    "New community",
+    "M4 20v-3a5 5 0 0 1 10 0v3M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 6v8M14 10h8",
+  ],
+]) {
+  const b = el("button", "contact-option");
+  b.type = "button";
+  const circle = el("span", "contact-option-icon");
+  circle.innerHTML = '<svg viewBox="0 0 24 24"><path d="' + icon + '"/></svg>';
+  b.append(circle, el("span", "", title));
+  b.addEventListener("click", () =>
+    toast(
+      title === "New contact"
+        ? "Contacts are registered accounts in this app. Search for their username."
+        : "Communities are not implemented in this independent build.",
+    ),
+  );
+  contactActions.append(b);
+}
+$("contact-search").after(contactActions);
+const originalContactMode = setContactMode;
+setContactMode = function (group) {
+  originalContactMode(group);
+  contactActions.hidden = group;
+  $("direct-mode").hidden = !group;
+};
 
 // Information takes the same full conversation-column surface as the reference.
-$('info-dialog').classList.add('conversation-drawer');
-$('info-dialog').querySelector('header').prepend($('close-info'));
-$('chat-info').addEventListener('click',()=>{
- const c=active();if(!c)return;
- const box=$('info-content'),saved=[...box.querySelectorAll('button')];box.replaceChildren();
- $('info-title').textContent=c.kind==='group'?'Group info':'Contact info';
- const person=c.kind==='direct'?c.members.find(u=>u.id!==me.id):null;
- const summary=el('section','info-profile'),image=c.kind==='group'?avatar(c.name,true):userAvatar(person);image.classList.add('info-profile-avatar');summary.append(image,el('h3','',c.name),el('p','',person?'@'+person.handle:c.members.length+' members'));
- if(person?.about)summary.append(el('p','',person.about));box.append(summary);
- function action(title,description,icon,fn){const b=toolButton(box,title,fn);b.classList.add('info-action');const glyph=el('span','info-action-icon');glyph.innerHTML=icon||'';const words=el('span');words.append(el('span','',title));if(description)words.append(el('small','',description));b.replaceChildren(glyph,words);return b;}
- action('Media, links and docs','',referenceIcons.Media,()=>{$('info-dialog').close();galleryButton.click();});
- action('Starred messages','',menuReferenceIcons.Star,async()=>{const result=await api('/api/starred');const panel=showTools('Starred messages');for(const m of result.messages.filter(m=>m.chatId===c.id))toolButton(panel,m.senderName+': '+preview(m),()=>{toolsDialog.close();$('info-dialog').close();});if(!panel.querySelector('.tool-row'))panel.append(el('p','info-note','No starred messages in this conversation.'));});
- action(c.prefs?.muted?'Unmute notifications':'Mute notifications','',referenceIcons.Status,async()=>{await setPrefs(c,'muted',!c.prefs?.muted);$('info-dialog').close();});
- action('Chat theme','Use light or dark theme',referenceIcons.Chats,()=>{toggleTheme();$('info-dialog').close();});
- const privacy=el('p','info-security-note','Only chat members can access these messages. This independent app stores messages on its server. It does not provide end-to-end encryption.');box.append(privacy);
- if(c.kind==='group'){
-  box.append(el('h4','info-section-title','Members'));
-  for(const user of c.members){const row=el('div','info-member');row.append(userAvatar(user),el('span','',user.name+(user.id===c.ownerId?' · owner':'')));box.append(row);}
-  for(const button of saved.filter(b=>b.textContent==='Manage group'))box.append(button);
- }else{box.append(el('h4','info-section-title','About and username'),el('p','info-about',person?.about||'Available'),el('p','info-about','@'+person.handle));}
+$("info-dialog").classList.add("conversation-drawer");
+$("info-dialog").querySelector("header").prepend($("close-info"));
+$("chat-info").addEventListener("click", () => {
+  const c = active();
+  if (!c) return;
+  const box = $("info-content"),
+    saved = [...box.querySelectorAll("button")];
+  box.replaceChildren();
+  $("info-title").textContent =
+    c.kind === "group" ? "Group info" : "Contact info";
+  const person =
+    c.kind === "direct" ? c.members.find((u) => u.id !== me.id) : null;
+  const summary = el("section", "info-profile"),
+    image = c.kind === "group" ? avatar(c.name, true) : userAvatar(person);
+  image.classList.add("info-profile-avatar");
+  summary.append(
+    image,
+    el("h3", "", c.name),
+    el("p", "", person ? "@" + person.handle : c.members.length + " members"),
+  );
+  if (person?.about) summary.append(el("p", "", person.about));
+  box.append(summary);
+  function action(title, description, icon, fn) {
+    const b = toolButton(box, title, fn);
+    b.classList.add("info-action");
+    const glyph = el("span", "info-action-icon");
+    glyph.innerHTML = icon || "";
+    const words = el("span");
+    words.append(el("span", "", title));
+    if (description) words.append(el("small", "", description));
+    b.replaceChildren(glyph, words);
+    return b;
+  }
+  action("Media, links and docs", "", referenceIcons.Media, () => {
+    $("info-dialog").close();
+    galleryButton.click();
+  });
+  action("Starred messages", "", menuReferenceIcons.Star, async () => {
+    const result = await api("/api/starred");
+    const panel = showTools("Starred messages");
+    for (const m of result.messages.filter((m) => m.chatId === c.id))
+      toolButton(panel, m.senderName + ": " + preview(m), () => {
+        toolsDialog.close();
+        $("info-dialog").close();
+      });
+    if (!panel.querySelector(".tool-row"))
+      panel.append(
+        el("p", "info-note", "No starred messages in this conversation."),
+      );
+  });
+  action(
+    c.prefs?.muted ? "Unmute notifications" : "Mute notifications",
+    "",
+    referenceIcons.Status,
+    async () => {
+      await setPrefs(c, "muted", !c.prefs?.muted);
+      $("info-dialog").close();
+    },
+  );
+  action("Chat theme", "Use light or dark theme", referenceIcons.Chats, () => {
+    toggleTheme();
+    $("info-dialog").close();
+  });
+  const privacy = el(
+    "p",
+    "info-security-note",
+    "Only chat members can access these messages. This independent app stores messages on its server. It does not provide end-to-end encryption.",
+  );
+  box.append(privacy);
+  if (c.kind === "group") {
+    box.append(el("h4", "info-section-title", "Members"));
+    for (const user of c.members) {
+      const row = el("div", "info-member");
+      row.append(
+        userAvatar(user),
+        el("span", "", user.name + (user.id === c.ownerId ? " · owner" : "")),
+      );
+      box.append(row);
+    }
+    for (const button of saved.filter((b) => b.textContent === "Manage group"))
+      box.append(button);
+  } else {
+    box.append(
+      el("h4", "info-section-title", "About and username"),
+      el("p", "info-about", person?.about || "Available"),
+      el("p", "info-about", "@" + person.handle),
+    );
+  }
 });
 
 // Reuse the working history-search surface without hiding the server-backed route.
-const searchPanel=$('message-search-bar');searchPanel.classList.add('conversation-search-drawer');
-const searchHeading=el('header','search-drawer-header');searchHeading.append($('close-message-search'),el('h2','','Search messages'));searchPanel.prepend(searchHeading);
-const searchResults=el('div','drawer-search-results');searchPanel.append(searchResults);
-let searchTimer,searchSequence=0;
-function searchDrawerHint(){searchResults.replaceChildren(el('p','search-drawer-hint','Search for messages with '+(active()?.name||'this conversation')+'.'));}
-$('search-messages-toggle').addEventListener('click',()=>{searchDrawerHint();$('message-search').focus();});
-$('message-search').addEventListener('input',()=>{clearTimeout(searchTimer);const generation=++searchSequence;const q=$('message-search').value.trim();if(!q){searchDrawerHint();return;}searchTimer=setTimeout(async()=>{try{const result=await api(`/api/chats/${activeId}/search?q=${encodeURIComponent(q)}`);if(generation!==searchSequence||searchPanel.hidden)return;searchResults.replaceChildren();if(!result.messages.length)searchResults.append(el('p','search-drawer-hint','No messages found.'));for(const message of result.messages){const b=el('button','search-result');b.type='button';b.append(el('small','',new Date(message.createdAt).toLocaleDateString()),el('span','',preview(message)));b.addEventListener('click',async()=>{searchPanel.hidden=true;await openChat(message.chatId);const item=[...$('messages').children].find(x=>x.dataset.messageId===message.id);if(item){item.scrollIntoView({block:'center'});item.classList.add('search-match');}else toast('This result is older. Use Load earlier messages to reach it.');});searchResults.append(b);}}catch(e){toast(e.message);}},200);});
-$('message-search').placeholder='Search';
-const jumpToDate=el('button','jump-to-date icon-button');jumpToDate.type='button';jumpToDate.setAttribute('aria-label','Jump to date');jumpToDate.title='Jump to date is not implemented';jumpToDate.innerHTML='<svg viewBox="0 0 24 24"><rect x="3" y="5" width="16" height="15" rx="2"/><path d="M7 3v4M15 3v4M3 10h16"/><circle cx="17" cy="17" r="4"/><path d="m20 20 3 3"/></svg>';jumpToDate.addEventListener('click',()=>toast('Jump to date is not yet implemented. Search by message text.'));searchPanel.append(jumpToDate);
-function searchAffordances(){allSearchButton.hidden=!$('message-search').value.trim();$('search-count').hidden=!$('message-search').value.trim();}
-$('search-messages-toggle').addEventListener('click',searchAffordances);$('message-search').addEventListener('input',searchAffordances);
+const searchPanel = $("message-search-bar");
+searchPanel.classList.add("conversation-search-drawer");
+const searchHeading = el("header", "search-drawer-header");
+searchHeading.append(
+  $("close-message-search"),
+  el("h2", "", "Search messages"),
+);
+searchPanel.prepend(searchHeading);
+const searchResults = el("div", "drawer-search-results");
+searchPanel.append(searchResults);
+let searchTimer,
+  searchSequence = 0;
+function searchDrawerHint() {
+  searchResults.replaceChildren(
+    el(
+      "p",
+      "search-drawer-hint",
+      "Search for messages with " +
+        (active()?.name || "this conversation") +
+        ".",
+    ),
+  );
+}
+$("search-messages-toggle").addEventListener("click", () => {
+  searchDrawerHint();
+  $("message-search").focus();
+});
+$("message-search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const generation = ++searchSequence;
+  const q = $("message-search").value.trim();
+  if (!q) {
+    searchDrawerHint();
+    return;
+  }
+  searchTimer = setTimeout(async () => {
+    try {
+      const result = await api(
+        `/api/chats/${activeId}/search?q=${encodeURIComponent(q)}`,
+      );
+      if (generation !== searchSequence || searchPanel.hidden) return;
+      searchResults.replaceChildren();
+      if (!result.messages.length)
+        searchResults.append(
+          el("p", "search-drawer-hint", "No messages found."),
+        );
+      for (const message of result.messages) {
+        const b = el("button", "search-result");
+        b.type = "button";
+        b.append(
+          el("small", "", new Date(message.createdAt).toLocaleDateString()),
+          el("span", "", preview(message)),
+        );
+        b.addEventListener("click", async () => {
+          searchPanel.hidden = true;
+          await openChat(message.chatId);
+          const item = [...$("messages").children].find(
+            (x) => x.dataset.messageId === message.id,
+          );
+          if (item) {
+            item.scrollIntoView({ block: "center" });
+            item.classList.add("search-match");
+          } else
+            toast(
+              "This result is older. Use Load earlier messages to reach it.",
+            );
+        });
+        searchResults.append(b);
+      }
+    } catch (e) {
+      toast(e.message);
+    }
+  }, 200);
+});
+$("message-search").placeholder = "Search";
+const jumpToDate = el("button", "jump-to-date icon-button");
+jumpToDate.type = "button";
+jumpToDate.setAttribute("aria-label", "Jump to date");
+jumpToDate.title = "Jump to date is not implemented";
+jumpToDate.innerHTML =
+  '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="16" height="15" rx="2"/><path d="M7 3v4M15 3v4M3 10h16"/><circle cx="17" cy="17" r="4"/><path d="m20 20 3 3"/></svg>';
+jumpToDate.addEventListener("click", () =>
+  toast("Jump to date is not yet implemented. Search by message text."),
+);
+searchPanel.append(jumpToDate);
+function searchAffordances() {
+  allSearchButton.hidden = !$("message-search").value.trim();
+  $("search-count").hidden = !$("message-search").value.trim();
+}
+$("search-messages-toggle").addEventListener("click", searchAffordances);
+$("message-search").addEventListener("input", searchAffordances);
 
 // Settings subpages remain in the same sidebar instead of opening centered dialogs.
 const beforeSettingsDrawer = showTools;
-showTools = function(title, point) {
+showTools = function (title, point) {
   const panel = beforeSettingsDrawer(title, point);
   panel.classList.remove("settings-subpage", "profile-editor");
-  if (!point && $("account-dialog").open && ["Edit profile", "Account", "Privacy", "Chats", "Keyboard shortcuts", "About"].includes(title)) {
+  if (
+    !point &&
+    $("account-dialog").open &&
+    [
+      "Edit profile",
+      "Account",
+      "Privacy",
+      "Chats",
+      "Keyboard shortcuts",
+      "About",
+    ].includes(title)
+  ) {
     panel.classList.add("settings-subpage");
-    const header = panel.querySelector("header"), back = header.querySelector("button");
-    back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 5-7 7 7 7M5 12h15"/></svg>'; back.title = "Back to settings"; header.prepend(back);
+    const header = panel.querySelector("header"),
+      back = header.querySelector("button");
+    back.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 5-7 7 7 7M5 12h15"/></svg>';
+    back.title = "Back to settings";
+    header.prepend(back);
   }
   return panel;
 };
-const picker = $("emoji-picker"), emojiGrid = el("div", "emoji-grid"), emojiTop = el("div", "emoji-top"), emojiSearch = el("input", "emoji-search");
-const emojiButtons = [...picker.querySelectorAll("button")];
-emojiGrid.append(...emojiButtons);
-emojiSearch.placeholder = "Search emoji"; emojiSearch.setAttribute("aria-label", "Search emoji");
+const picker = $("emoji-picker"),
+  emojiGrid = el("div", "emoji-grid"),
+  emojiTop = el("div", "emoji-top"),
+  emojiSearch = el("input", "emoji-search");
+emojiSearch.placeholder = "Search emoji";
+emojiSearch.setAttribute("aria-label", "Search emoji");
 const emojiCategory = el("div", "emoji-category", "Smileys & People");
-const categories = [["Smileys & People", "☻"], ["Animals & Nature", "♧"], ["Food & Drink", "♨"], ["Activity", "⚽"], ["Travel & Places", "♙"], ["Objects", "♧"], ["Symbols", "※"], ["Flags", "⚑"]];
-for (const [label, shape] of categories) {const button=el("button", "emoji-category-button", shape);button.type="button";button.setAttribute("aria-label",label);if(label!=="Smileys & People")button.setAttribute("aria-disabled","true");else button.classList.add("selected");button.addEventListener("click",()=>{if(label!=="Smileys & People")toast("This build includes a limited emoji catalog. More categories are not yet implemented.");else {emojiSearch.value="";emojiSearch.dispatchEvent(new Event("input"));}});emojiTop.append(button);}
-const emojiFooter=el("div","emoji-footer");
-for (const title of ["Emoji", "GIF", "Sticker"]){const button=el("button","",title);button.type="button";if(title!=="Emoji")button.setAttribute("aria-disabled","true");button.addEventListener("click",()=>{if(title!=="Emoji")toast(title+" selection is not yet implemented.");});emojiFooter.append(button);}
-picker.replaceChildren(emojiTop,emojiSearch,emojiCategory,emojiGrid,emojiFooter);
-emojiSearch.addEventListener("input",()=>{const query=emojiSearch.value.trim().toLowerCase();for(const button of emojiButtons){const value=button.getAttribute("aria-label").replace("Insert ","");button.hidden=!!query&&!((emojiSearchNames[value]||"")+value).includes(query);}emojiCategory.textContent=query?"Search results":"Smileys & People";});
-$("emoji-button").addEventListener("click",()=>{if(!picker.hidden)emojiSearch.focus();});
-document.addEventListener("click",e=>{if(!picker.contains(e.target)&&!$("emoji-button").contains(e.target))picker.hidden=true;});
+const categories = [
+  ["Smileys & People", "☻"],
+  ["Animals & Nature", "♧"],
+  ["Food & Drink", "♨"],
+  ["Activity", "⚽"],
+  ["Travel & Places", "♙"],
+  ["Objects", "♧"],
+  ["Symbols", "※"],
+  ["Flags", "⚑"],
+];
+let selectedEmojiCategory = "Smileys & People";
+for (const [label, shape] of categories) {
+  const button = el("button", "emoji-category-button", shape);
+  button.type = "button";
+  button.setAttribute("aria-label", label);
+  if (label === selectedEmojiCategory) button.classList.add("selected");
+  button.addEventListener("click", () => {
+    selectedEmojiCategory = label;
+    emojiSearch.value = "";
+    for (const b of emojiTop.children)
+      b.classList.toggle("selected", b === button);
+    renderEmojiCatalog();
+  });
+  emojiTop.append(button);
+}
+const emojiTones = el("select", "emoji-tones");
+emojiTones.setAttribute("aria-label", "Emoji skin tone");
+for (const [value, label] of [
+  ["base", "Default skin tone"],
+  ["all", "All skin tones"],
+  ["1F3FB", "Light skin tone"],
+  ["1F3FC", "Medium-light skin tone"],
+  ["1F3FD", "Medium skin tone"],
+  ["1F3FE", "Medium-dark skin tone"],
+  ["1F3FF", "Dark skin tone"],
+]) {
+  const option = el("option", "", label);
+  option.value = value;
+  emojiTones.append(option);
+}
+emojiTones.addEventListener("change", renderEmojiCatalog);
+function renderEmojiCatalog() {
+  const query = emojiSearch.value.trim().toLowerCase();
+  const groups = {
+    "Smileys & People": [0, 1, 2],
+    "Animals & Nature": [3],
+    "Food & Drink": [4],
+    "Travel & Places": [5],
+    Activity: [6],
+    Objects: [7],
+    Symbols: [8],
+    Flags: [9],
+  };
+  const entries = emojiCatalog.filter((item) => {
+    if (query)
+      return (item.name + " " + item.tags.join(" ") + " " + item.emoji)
+        .toLowerCase()
+        .includes(query);
+    const tone = emojiTones.value;
+    return (
+      groups[selectedEmojiCategory].includes(item.group) &&
+      (tone === "all" ||
+        (tone === "base" && !item.variant) ||
+        (tone !== "base" &&
+          [...item.emoji].some(
+            (ch) => ch.codePointAt(0).toString(16).toUpperCase() === tone,
+          )))
+    );
+  });
+  emojiCategory.textContent = query
+    ? "Search results (" + entries.length + ")"
+    : selectedEmojiCategory;
+  emojiGrid.replaceChildren();
+  emojiGrid.scrollTop = 0;
+  let rendered = 0;
+  function more() {
+    emojiGrid.querySelector(".emoji-more")?.remove();
+    for (const item of entries.slice(rendered, rendered + 180)) {
+      const b = el("button");
+      b.type = "button";
+      b.title = item.name;
+      b.setAttribute("aria-label", "Insert " + item.emoji);
+      const image = el("img", "color-emoji");
+      image.src = "/emoji/" + item.asset;
+      image.alt = "";
+      image.loading = "lazy";
+      b.append(image);
+      b.addEventListener("click", () => {
+        const input = $("message-input");
+        input.setRangeText(
+          item.emoji,
+          input.selectionStart,
+          input.selectionEnd,
+          "end",
+        );
+        input.dispatchEvent(new Event("input"));
+        input.focus();
+      });
+      emojiGrid.append(b);
+    }
+    rendered += 180;
+    if (rendered < entries.length) {
+      const button = el("button", "emoji-more", "Load more emoji");
+      button.type = "button";
+      button.addEventListener("click", more);
+      emojiGrid.append(button);
+    }
+    if (!entries.length)
+      emojiGrid.append(el("p", "emoji-empty", "No matching emoji."));
+  }
+  more();
+}
+const emojiFooter = el("div", "emoji-footer");
+for (const title of ["Emoji", "GIF", "Sticker"]) {
+  const button = el("button", "", title);
+  button.type = "button";
+  if (title !== "Emoji") button.setAttribute("aria-disabled", "true");
+  button.addEventListener("click", () => {
+    if (title !== "Emoji") toast(title + " selection is not yet implemented.");
+  });
+  emojiFooter.append(button);
+}
+picker.replaceChildren(
+  emojiTop,
+  emojiSearch,
+  emojiTones,
+  emojiCategory,
+  emojiGrid,
+  emojiFooter,
+);
+emojiSearch.addEventListener("input", renderEmojiCatalog);
+renderEmojiCatalog();
+$("emoji-button").addEventListener("click", () => {
+  if (!picker.hidden) emojiSearch.focus();
+});
+document.addEventListener("click", (e) => {
+  if (!picker.contains(e.target) && !$("emoji-button").contains(e.target))
+    picker.hidden = true;
+});
 
 function showInviteManager(chat) {
   const box = showTools("Invite via link");
-  box.append(el("p", "info-note", "Anyone with a current link and an app account can join and see the entire group history. Links expire after 7 days. Creating a new link turns off the old one. Removing a member does not stop them rejoining through a current link; turn off or reset the link too."));
-  const output=el("div","invite-output");
-  const generate=toolButton(box, "Create new invite link", async () => {
-    generate.disabled=true;
+  box.append(
+    el(
+      "p",
+      "info-note",
+      "Anyone with a current link and an app account can join and see the entire group history. Links expire after 7 days. Creating a new link turns off the old one. Removing a member does not stop them rejoining through a current link; turn off or reset the link too.",
+    ),
+  );
+  const output = el("div", "invite-output");
+  const generate = toolButton(box, "Create new invite link", async () => {
+    generate.disabled = true;
     try {
-    const result = await api(`/api/chats/${chat.id}/invite`, {method:"POST",body:"{}"});
-    const link = new URL(location.pathname, location.origin);
-    link.searchParams.set("invite",result.token);
-    const field = el("input", "invite-link");
-    field.readOnly = true;
-    field.value = link.href;
-    field.setAttribute("aria-label","Group invite link");
-    box.querySelector(".invite-link")?.remove();
-    box.append(field,el("p","info-note","Expires " + new Date(result.expires).toLocaleString()));
-    field.focus(); field.select();
-    toolButton(box,"Copy invite link",async () => { await navigator.clipboard.writeText(link.href); toast("Invite link copied."); });
+      const result = await api(`/api/chats/${chat.id}/invite`, {
+        method: "POST",
+        body: "{}",
+      });
+      const link = new URL(location.pathname, location.origin);
+      link.searchParams.set("invite", result.token);
+      const field = el("input", "invite-link");
+      field.readOnly = true;
+      field.value = link.href;
+      field.setAttribute("aria-label", "Group invite link");
+      box.querySelector(".invite-link")?.remove();
+      output.replaceChildren(
+        field,
+        el(
+          "p",
+          "info-note",
+          "Expires " + new Date(result.expires).toLocaleString(),
+        ),
+      );
+      field.focus();
+      field.select();
+      toolButton(output, "Copy invite link", async () => {
+        await navigator.clipboard.writeText(link.href);
+        toast("Invite link copied.");
+      });
+    } finally {
+      generate.disabled = false;
+    }
   });
-  toolButton(box, "Turn off invite link", async () => {
-    await api(`/api/chats/${chat.id}/invite`, {method:"DELETE",body:"{}"});
-    toolsDialog.close(); toast("Invite link turned off.");
-  },true);
+  toolButton(
+    box,
+    "Turn off invite link",
+    async () => {
+      await api(`/api/chats/${chat.id}/invite`, {
+        method: "DELETE",
+        body: "{}",
+      });
+      toolsDialog.close();
+      toast("Invite link turned off.");
+    },
+    true,
+  );
   box.append(output);
 }
 async function showGroupInvite(token) {
   try {
     const result = await api(`/api/invites/${encodeURIComponent(token)}`);
     const box = showTools("Group invitation");
-    box.append(el("h3","",result.group.name), el("p","info-note", result.group.memberCount + " members. Joining gives you access to the entire group history and shares your app profile with its members."));
-    toolButton(box,result.group.joined ? "Open group" : "Join group", async () => {
-      const result = await api(`/api/invites/${encodeURIComponent(token)}/join`,{method:"POST",body:"{}"});
-      await refreshChats(); toolsDialog.close(); await openChat(result.chat.id);
-    });
-  } catch (e) { toast(e.message); }
+    box.append(
+      el("h3", "", result.group.name),
+      el(
+        "p",
+        "info-note",
+        result.group.memberCount +
+          " members. Joining gives you access to the entire group history and shares your app profile with its members.",
+      ),
+    );
+    toolButton(
+      box,
+      result.group.joined ? "Open group" : "Join group",
+      async () => {
+        const result = await api(
+          `/api/invites/${encodeURIComponent(token)}/join`,
+          { method: "POST", body: "{}" },
+        );
+        await refreshChats();
+        toolsDialog.close();
+        await openChat(result.chat.id);
+      },
+    );
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 function showMediaStatusComposer() {
-  const box=showTools("New photo or video status");
-  const input=el("input");
-  input.type="file";
-  input.accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/ogg";
-  input.setAttribute("aria-label","Status photo or video");
-  const preview=el("div","status-media-preview");
-  const caption=el("textarea","status-input");
-  caption.maxLength=500;
-  caption.placeholder="Add a caption...";
-  caption.setAttribute("aria-label","Status caption");
-  box.append(el("p","info-note","Shared for 24 hours with people who currently share a conversation with you. Up to 25 MB. Video playback depends on the file's codec and your browser."),input,preview,caption);
-  let file,objectURL;
-  const clear=()=>{ if(objectURL) URL.revokeObjectURL(objectURL); objectURL=null; preview.querySelector("video")?.pause(); };
-  toolsDialog.addEventListener("close",clear,{once:true});
-  const share=toolButton(box,"Share media for 24 hours",async()=>{
+  const box = showTools("New photo or video status");
+  const input = el("input");
+  input.type = "file";
+  input.accept =
+    "image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/ogg";
+  input.setAttribute("aria-label", "Status photo or video");
+  const preview = el("div", "status-media-preview");
+  const caption = el("textarea", "status-input");
+  caption.maxLength = 500;
+  caption.placeholder = "Add a caption...";
+  caption.setAttribute("aria-label", "Status caption");
+  box.append(
+    el(
+      "p",
+      "info-note",
+      "Shared for 24 hours with people who currently share a conversation with you. Up to 25 MB. Video playback depends on the file's codec and your browser.",
+    ),
+    input,
+    preview,
+    caption,
+  );
+  let file, objectURL;
+  const clear = () => {
+    if (objectURL) URL.revokeObjectURL(objectURL);
+    objectURL = null;
+    preview.querySelector("video")?.pause();
+  };
+  toolsDialog.addEventListener("close", clear, { once: true });
+  const share = toolButton(box, "Share media for 24 hours", async () => {
     if (!file) return;
-    share.disabled=true;
-    input.disabled=true;
+    share.disabled = true;
+    input.disabled = true;
     try {
-      const body=new FormData(); body.append("file",file); body.append("text",caption.value);
-      await api("/api/stories/media",{method:"POST",body});
-      clear(); await showStatuses();
-    } finally { share.disabled=!file; input.disabled=false; }
-  });
-  share.disabled=true;
-  input.addEventListener("change",()=>{
-    clear(); preview.replaceChildren(); file=input.files[0];
-    if (!file) {share.disabled=true;return;}
-    if (file.size>25*1024*1024 || !/^(image|video)\//.test(file.type)) {
-      file=null; share.disabled=true; toast("Choose a photo or video up to 25 MB."); return;
+      const body = new FormData();
+      body.append("file", file);
+      body.append("text", caption.value);
+      await api("/api/stories/media", { method: "POST", body });
+      clear();
+      await showStatuses();
+    } finally {
+      share.disabled = !file;
+      input.disabled = false;
     }
-    objectURL=URL.createObjectURL(file);
-    const media=el(file.type.startsWith("video/")?"video":"img");
-    media.src=objectURL;
-    if(media.tagName==="VIDEO") {media.controls=true;media.setAttribute("aria-label","Status video preview");} else media.alt="Status photo preview";
-    preview.append(media); share.disabled=false;
+  });
+  share.disabled = true;
+  input.addEventListener("change", () => {
+    clear();
+    preview.replaceChildren();
+    file = input.files[0];
+    if (!file) {
+      share.disabled = true;
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024 || !/^(image|video)\//.test(file.type)) {
+      file = null;
+      share.disabled = true;
+      toast("Choose a photo or video up to 25 MB.");
+      return;
+    }
+    objectURL = URL.createObjectURL(file);
+    const media = el(file.type.startsWith("video/") ? "video" : "img");
+    media.src = objectURL;
+    if (media.tagName === "VIDEO") {
+      media.controls = true;
+      media.setAttribute("aria-label", "Status video preview");
+    } else media.alt = "Status photo preview";
+    preview.append(media);
+    share.disabled = false;
   });
 }
 
 let storyPlaybackCleanup;
-function stopStoryPlayback() { storyPlaybackCleanup?.(); storyPlaybackCleanup=null; }
-function openStoryPlayback(stories,index) {
-  const story=stories[index]; if (!story) return;
-  const view=showTools(story.name);view.classList.add("story-player");
-  const progress=el("progress","story-progress"); progress.max=1;progress.value=0;progress.setAttribute("aria-label","Status progress");
-  const card=el("div","story-card story-color-"+story.color,story.text);
+function stopStoryPlayback() {
+  storyPlaybackCleanup?.();
+  storyPlaybackCleanup = null;
+}
+function openStoryPlayback(stories, index) {
+  const story = stories[index];
+  if (!story) return;
+  const view = showTools(story.name);
+  view.classList.add("story-player");
+  const progress = el("progress", "story-progress");
+  progress.max = 1;
+  progress.value = 0;
+  progress.setAttribute("aria-label", "Status progress");
+  const card = el("div", "story-card story-color-" + story.color, story.text);
   let media;
-  if(story.media) {
-    card.classList.add("story-media-card");card.replaceChildren();
-    media=el(story.media.mime.startsWith("video/")?"video":"img");media.src=story.media.url;
-    if(media.tagName==="VIDEO"){media.controls=true;media.setAttribute("aria-label","Status video");}else media.alt=story.media.filename;
-    card.append(media);if(story.text)card.append(el("p","story-caption",story.text));
+  if (story.media) {
+    card.classList.add("story-media-card");
+    card.replaceChildren();
+    media = el(story.media.mime.startsWith("video/") ? "video" : "img");
+    media.src = story.media.url;
+    if (media.tagName === "VIDEO") {
+      media.controls = true;
+      media.setAttribute("aria-label", "Status video");
+    } else media.alt = story.media.filename;
+    card.append(media);
+    if (story.text) card.append(el("p", "story-caption", story.text));
   }
-  const controls=el("div","story-controls");
-  const previous=toolButton(controls,"Previous status",()=>openStoryPlayback(stories,index-1));previous.disabled=index===0;
-  let paused=false,elapsed=0,last=performance.now(),ready=!media;
-  const pause=toolButton(controls,"Pause status",()=>{paused=!paused;pause.textContent=paused?"Resume status":"Pause status";if(media?.tagName==="VIDEO"){if(paused)media.pause();else media.play().catch(()=>{});}});
-  const next=()=>{if(index+1<stories.length)openStoryPlayback(stories,index+1);else toolsDialog.close();};
-  toolButton(controls,"Next status",next);
-  view.append(progress,card,controls,el("p","info-note",new Date(story.created_at).toLocaleString()),el("p","info-note","Opening this status shares a view receipt with its author. Text/photos advance after 5 seconds; videos advance when playback ends."));
-  let recorded=false;
-  const record=()=>{if(recorded)return;recorded=true;api("/api/stories/"+story.id+"/view",{method:"POST",body:"{}"}).catch(e=>toast(e.message));};
-  if(!media)record();
-  else if(media.tagName==="IMG") {media.addEventListener("load",()=>{ready=true;record();});if(media.complete&&media.naturalWidth){ready=true;record();}}
-  else {
-    media.addEventListener("playing",()=>{ready=true;record();});
-    media.addEventListener("ended",next);
-    media.addEventListener("loadedmetadata",()=>media.play().catch(()=>{pause.textContent="Play status";paused=true;}));
-  }
-  if(story.user_id===me.id){
-    toolButton(view,"View status receipts",async()=>{
-      paused=true;media?.pause?.();
-      const result=await api("/api/stories/"+story.id+"/views");
-      const box=showTools("Status views");
-      if(!result.views.length)box.append(el("p","info-note","No views yet."));
-      for(const person of result.views)box.append(el("p","info-note",person.name+" · "+new Date(person.viewed_at).toLocaleString()));
-    });
-    toolButton(view,"Delete my status",async()=>{await api("/api/stories/"+story.id,{method:"DELETE",body:"{}"});await showStatuses();},true);
-  }
-  const frame=()=>{
-    const now=performance.now(),delta=now-last;last=now;
-    if(ready&&!paused&&!document.hidden){
-      if(media?.tagName==="VIDEO")progress.value=Number.isFinite(media.duration)&&media.duration>0?media.currentTime/media.duration:0;
-      else {elapsed+=delta;progress.value=Math.min(1,elapsed/5000);if(elapsed>=5000){next();return;}}
+  const controls = el("div", "story-controls");
+  const previous = toolButton(controls, "Previous status", () =>
+    openStoryPlayback(stories, index - 1),
+  );
+  previous.disabled = index === 0;
+  let paused = false,
+    elapsed = 0,
+    last = performance.now(),
+    ready = !media;
+  const pause = toolButton(controls, "Pause status", () => {
+    paused = !paused;
+    pause.textContent = paused ? "Resume status" : "Pause status";
+    if (media?.tagName === "VIDEO") {
+      if (paused) media.pause();
+      else media.play().catch(() => {});
     }
-    raf=requestAnimationFrame(frame);
+  });
+  const next = () => {
+    if (index + 1 < stories.length) openStoryPlayback(stories, index + 1);
+    else toolsDialog.close();
   };
-  let raf=requestAnimationFrame(frame);
-  const key=e=>{if(e.target.tagName==="VIDEO")return;if(e.key==="ArrowRight"){e.preventDefault();next();}if(e.key==="ArrowLeft"&&index>0){e.preventDefault();openStoryPlayback(stories,index-1);}};
-  view.addEventListener("keydown",key);
-  const cleanup=()=>{cancelAnimationFrame(raf);media?.pause?.();view.removeEventListener("keydown",key);view.removeEventListener("close",cleanup);};
-  storyPlaybackCleanup=cleanup;view.addEventListener("close",cleanup,{once:true});
+  toolButton(controls, "Next status", next);
+  view.append(
+    progress,
+    card,
+    controls,
+    el("p", "info-note", new Date(story.created_at).toLocaleString()),
+    el(
+      "p",
+      "info-note",
+      "Opening this status shares a view receipt with its author. Text/photos advance after 5 seconds; videos advance when playback ends.",
+    ),
+  );
+  let recorded = false;
+  const record = () => {
+    if (recorded) return;
+    recorded = true;
+    api("/api/stories/" + story.id + "/view", {
+      method: "POST",
+      body: "{}",
+    }).catch((e) => toast(e.message));
+  };
+  if (!media) record();
+  else if (media.tagName === "IMG") {
+    media.addEventListener("load", () => {
+      ready = true;
+      record();
+    });
+    if (media.complete && media.naturalWidth) {
+      ready = true;
+      record();
+    }
+  } else {
+    media.addEventListener("playing", () => {
+      ready = true;
+      record();
+    });
+    media.addEventListener("ended", next);
+    media.addEventListener("loadedmetadata", () =>
+      media.play().catch(() => {
+        pause.textContent = "Play status";
+        paused = true;
+      }),
+    );
+  }
+  if (story.user_id === me.id) {
+    toolButton(view, "View status receipts", async () => {
+      paused = true;
+      media?.pause?.();
+      const result = await api("/api/stories/" + story.id + "/views");
+      const box = showTools("Status views");
+      if (!result.views.length)
+        box.append(el("p", "info-note", "No views yet."));
+      for (const person of result.views)
+        box.append(
+          el(
+            "p",
+            "info-note",
+            person.name + " · " + new Date(person.viewed_at).toLocaleString(),
+          ),
+        );
+    });
+    toolButton(
+      view,
+      "Delete my status",
+      async () => {
+        await api("/api/stories/" + story.id, { method: "DELETE", body: "{}" });
+        await showStatuses();
+      },
+      true,
+    );
+  }
+  const frame = () => {
+    const now = performance.now(),
+      delta = now - last;
+    last = now;
+    if (ready && !paused && !document.hidden) {
+      if (media?.tagName === "VIDEO")
+        progress.value =
+          Number.isFinite(media.duration) && media.duration > 0
+            ? media.currentTime / media.duration
+            : 0;
+      else {
+        elapsed += delta;
+        progress.value = Math.min(1, elapsed / 5000);
+        if (elapsed >= 5000) {
+          next();
+          return;
+        }
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  };
+  let raf = requestAnimationFrame(frame);
+  const key = (e) => {
+    if (e.target.tagName === "VIDEO") return;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      next();
+    }
+    if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      openStoryPlayback(stories, index - 1);
+    }
+  };
+  view.addEventListener("keydown", key);
+  const cleanup = () => {
+    cancelAnimationFrame(raf);
+    media?.pause?.();
+    view.removeEventListener("keydown", key);
+    view.removeEventListener("close", cleanup);
+  };
+  storyPlaybackCleanup = cleanup;
+  view.addEventListener("close", cleanup, { once: true });
 }

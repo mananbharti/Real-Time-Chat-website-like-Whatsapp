@@ -615,174 +615,796 @@ test("group ownership protects member changes and removal immediately revokes hi
   );
 });
 
-test('polls validate membership, options and vote policy; changes survive history reads',async()=>{
- const created=await request(`/api/chats/${chat.id}/polls`,{cookie:alice.cookie,method:'POST',body:{question:'Lunch?',options:['Pizza','Salad'],multiple:false}});assert.equal(created.status,201);const id=created.data.message.id;
- assert.equal((await request(`/api/messages/${id}/votes`,{cookie:eve.cookie,method:'PUT',body:{options:[0]}})).status,404);
- assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[0,1]}})).status,400);
- assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[2]}})).status,400);
- assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[1]}})).status,200);
- const history=await request(`/api/chats/${chat.id}/messages`,{cookie:alice.cookie});const poll=history.data.messages.find(m=>m.id===id).poll;assert.deepEqual(poll.votes[0].options,[1]);assert.equal(poll.votes[0].userId,bob.id);
- assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[]}})).status,200);
- assert.equal((await request(`/api/chats/${chat.id}/polls`,{cookie:alice.cookie,method:'POST',body:{question:'Duplicates',options:['A','a']}})).status,400);
+test("polls validate membership, options and vote policy; changes survive history reads", async () => {
+  const created = await request(`/api/chats/${chat.id}/polls`, {
+    cookie: alice.cookie,
+    method: "POST",
+    body: { question: "Lunch?", options: ["Pizza", "Salad"], multiple: false },
+  });
+  assert.equal(created.status, 201);
+  const id = created.data.message.id;
+  assert.equal(
+    (
+      await request(`/api/messages/${id}/votes`, {
+        cookie: eve.cookie,
+        method: "PUT",
+        body: { options: [0] },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/api/messages/${id}/votes`, {
+        cookie: bob.cookie,
+        method: "PUT",
+        body: { options: [0, 1] },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(`/api/messages/${id}/votes`, {
+        cookie: bob.cookie,
+        method: "PUT",
+        body: { options: [2] },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(`/api/messages/${id}/votes`, {
+        cookie: bob.cookie,
+        method: "PUT",
+        body: { options: [1] },
+      })
+    ).status,
+    200,
+  );
+  const history = await request(`/api/chats/${chat.id}/messages`, {
+    cookie: alice.cookie,
+  });
+  const poll = history.data.messages.find((m) => m.id === id).poll;
+  assert.deepEqual(poll.votes[0].options, [1]);
+  assert.equal(poll.votes[0].userId, bob.id);
+  assert.equal(
+    (
+      await request(`/api/messages/${id}/votes`, {
+        cookie: bob.cookie,
+        method: "PUT",
+        body: { options: [] },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${chat.id}/polls`, {
+        cookie: alice.cookie,
+        method: "POST",
+        body: { question: "Duplicates", options: ["A", "a"] },
+      })
+    ).status,
+    400,
+  );
 });
-test('app lock revokes API and live-socket access until password reauthentication',async()=>{
- const user=await register('lock_test','Lock test');const live=await connect(user);const disconnected=new Promise(r=>live.once('disconnect',r));
- assert.equal((await request('/api/lock',{cookie:user.cookie,method:'POST',body:{}})).status,200);await disconnected;
- assert.equal((await request('/api/me',{cookie:user.cookie})).status,423);assert.equal((await request('/api/chats',{cookie:user.cookie})).status,423);
- await assert.rejects(connect(user),/App locked/);
- assert.equal((await request('/api/unlock',{cookie:user.cookie,method:'POST',body:{password:'bad'}})).status,401);
- assert.equal((await request('/api/me',{cookie:user.cookie})).status,423);
- assert.equal((await request('/api/unlock',{cookie:user.cookie,method:'POST',body:{password:'test-fixture-password-123'}})).status,200);
- assert.equal((await request('/api/me',{cookie:user.cookie})).status,200);assert.ok((await connect(user)).connected);
+test("app lock revokes API and live-socket access until password reauthentication", async () => {
+  const user = await register("lock_test", "Lock test");
+  const live = await connect(user);
+  const disconnected = new Promise((r) => live.once("disconnect", r));
+  assert.equal(
+    (
+      await request("/api/lock", {
+        cookie: user.cookie,
+        method: "POST",
+        body: {},
+      })
+    ).status,
+    200,
+  );
+  await disconnected;
+  assert.equal((await request("/api/me", { cookie: user.cookie })).status, 423);
+  assert.equal(
+    (await request("/api/chats", { cookie: user.cookie })).status,
+    423,
+  );
+  await assert.rejects(connect(user), /App locked/);
+  assert.equal(
+    (
+      await request("/api/unlock", {
+        cookie: user.cookie,
+        method: "POST",
+        body: { password: "bad" },
+      })
+    ).status,
+    401,
+  );
+  assert.equal((await request("/api/me", { cookie: user.cookie })).status, 423);
+  assert.equal(
+    (
+      await request("/api/unlock", {
+        cookie: user.cookie,
+        method: "POST",
+        body: { password: "test-fixture-password-123" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await request("/api/me", { cookie: user.cookie })).status, 200);
+  assert.ok((await connect(user)).connected);
 });
 
 test("multi-admin roles protect owners and invite links expire, reset, revoke and never expose history before joining", async () => {
-  const g = (await request("/api/chats", {cookie:alice.cookie,method:"POST",body:{kind:"group",name:"Admin fixture",members:[bob.id]}})).data.chat;
+  const g = (
+    await request("/api/chats", {
+      cookie: alice.cookie,
+      method: "POST",
+      body: { kind: "group", name: "Admin fixture", members: [bob.id] },
+    })
+  ).data.chat;
   const role = `/api/chats/${g.id}/members/${bob.id}/role`;
-  assert.equal((await request(role,{cookie:bob.cookie,method:"PATCH",body:{role:"admin"}})).status,403);
-  assert.equal((await request(role,{cookie:alice.cookie,method:"PATCH",body:{role:"invalid"}})).status,400);
-  assert.equal((await request(role,{cookie:alice.cookie,method:"PATCH",body:{role:"admin"}})).status,200);
-  assert.equal(server.db.prepare("SELECT role FROM members WHERE chat_id=? AND user_id=?").get(g.id,bob.id).role,"admin");
-  assert.equal((await request(`/api/chats/${g.id}/group`,{cookie:bob.cookie,method:"PATCH",body:{name:"Renamed by admin"}})).status,200);
-  assert.equal((await request(`/api/chats/${g.id}/members/${alice.id}/role`,{cookie:bob.cookie,method:"PATCH",body:{role:"member"}})).status,403);
-  assert.equal((await request(`/api/chats/${g.id}/members/${alice.id}`,{cookie:bob.cookie,method:"DELETE"})).status,403);
-  assert.equal((await request(`/api/chats/${g.id}/invite`,{cookie:eve.cookie,method:"POST"})).status,404);
-  const invite = (await request(`/api/chats/${g.id}/invite`,{cookie:bob.cookie,method:"POST"})).data;
-  assert.equal(invite.token.length,64);
-  assert.notEqual(server.db.prepare("SELECT token_hash FROM group_invites WHERE chat_id=?").get(g.id).token_hash,invite.token);
-  assert.equal((await request(`/api/invites/${invite.token}`)).status,401);
-  const preview = await request(`/api/invites/${invite.token}`,{cookie:eve.cookie});
-  assert.equal(preview.data.group.name,"Renamed by admin");
-  assert.equal(preview.data.group.memberCount,2);
-  assert.equal(preview.data.group.joined,false);
-  assert.equal((await request(`/api/chats/${g.id}/messages`,{cookie:eve.cookie})).status,403);
-  const replacement=(await request(`/api/chats/${g.id}/invite`,{cookie:alice.cookie,method:"POST"})).data;
-  assert.equal((await request(`/api/invites/${invite.token}/join`,{cookie:eve.cookie,method:"POST"})).status,404);
-  assert.equal((await request(`/api/invites/${replacement.token}/join`,{cookie:eve.cookie,method:"POST"})).status,200);
-  assert.equal((await request(`/api/invites/${replacement.token}/join`,{cookie:eve.cookie,method:"POST"})).data.chat.members.length,3);
-  assert.equal((await request(`/api/chats/${g.id}/messages`,{cookie:eve.cookie})).status,200);
-  assert.equal((await request(`/api/chats/${g.id}/invite`,{cookie:eve.cookie,method:"DELETE"})).status,403);
-  assert.equal((await request(`/api/chats/${g.id}/invite`,{cookie:bob.cookie,method:"DELETE"})).status,200);
-  assert.equal((await request(`/api/invites/${replacement.token}`,{cookie:eve.cookie})).status,404);
-  const expired=(await request(`/api/chats/${g.id}/invite`,{cookie:bob.cookie,method:"POST"})).data;
-  server.db.prepare("UPDATE group_invites SET expires=0 WHERE chat_id=?").run(g.id);
-  assert.equal((await request(`/api/invites/${expired.token}/join`,{cookie:eve.cookie,method:"POST"})).status,404);
-  await request(`/api/chats/${g.id}/members/${alice.id}`,{cookie:alice.cookie,method:"DELETE"});
-  assert.equal(server.db.prepare("SELECT owner_id FROM chats WHERE id=?").get(g.id).owner_id,bob.id);
+  assert.equal(
+    (
+      await request(role, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { role: "admin" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(role, {
+        cookie: alice.cookie,
+        method: "PATCH",
+        body: { role: "invalid" },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(role, {
+        cookie: alice.cookie,
+        method: "PATCH",
+        body: { role: "admin" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    server.db
+      .prepare("SELECT role FROM members WHERE chat_id=? AND user_id=?")
+      .get(g.id, bob.id).role,
+    "admin",
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/group`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { name: "Renamed by admin" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/members/${alice.id}/role`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { role: "member" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/members/${alice.id}`, {
+        cookie: bob.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/invite`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  const invite = (
+    await request(`/api/chats/${g.id}/invite`, {
+      cookie: bob.cookie,
+      method: "POST",
+    })
+  ).data;
+  assert.equal(invite.token.length, 64);
+  assert.notEqual(
+    server.db
+      .prepare("SELECT token_hash FROM group_invites WHERE chat_id=?")
+      .get(g.id).token_hash,
+    invite.token,
+  );
+  assert.equal((await request(`/api/invites/${invite.token}`)).status, 401);
+  const preview = await request(`/api/invites/${invite.token}`, {
+    cookie: eve.cookie,
+  });
+  assert.equal(preview.data.group.name, "Renamed by admin");
+  assert.equal(preview.data.group.memberCount, 2);
+  assert.equal(preview.data.group.joined, false);
+  assert.equal(
+    (await request(`/api/chats/${g.id}/messages`, { cookie: eve.cookie }))
+      .status,
+    403,
+  );
+  const replacement = (
+    await request(`/api/chats/${g.id}/invite`, {
+      cookie: alice.cookie,
+      method: "POST",
+    })
+  ).data;
+  assert.equal(
+    (
+      await request(`/api/invites/${invite.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/api/invites/${replacement.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/invites/${replacement.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).data.chat.members.length,
+    3,
+  );
+  assert.equal(
+    (await request(`/api/chats/${g.id}/messages`, { cookie: eve.cookie }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/invite`, {
+        cookie: eve.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/invite`, {
+        cookie: bob.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/api/invites/${replacement.token}`, { cookie: eve.cookie }))
+      .status,
+    404,
+  );
+  const expired = (
+    await request(`/api/chats/${g.id}/invite`, {
+      cookie: bob.cookie,
+      method: "POST",
+    })
+  ).data;
+  server.db
+    .prepare("UPDATE group_invites SET expires=0 WHERE chat_id=?")
+    .run(g.id);
+  assert.equal(
+    (
+      await request(`/api/invites/${expired.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  await request(`/api/chats/${g.id}/members/${alice.id}`, {
+    cookie: alice.cookie,
+    method: "DELETE",
+  });
+  assert.equal(
+    server.db.prepare("SELECT owner_id FROM chats WHERE id=?").get(g.id)
+      .owner_id,
+    bob.id,
+  );
 });
 
 test("multi-admin roles protect owners and invite links expire, reset, revoke and never expose history before joining", async () => {
-  const g = (await request("/api/chats", {cookie:alice.cookie,method:"POST",body:{kind:"group",name:"Admin fixture",members:[bob.id]}})).data.chat;
+  const g = (
+    await request("/api/chats", {
+      cookie: alice.cookie,
+      method: "POST",
+      body: { kind: "group", name: "Admin fixture", members: [bob.id] },
+    })
+  ).data.chat;
   const role = `/api/chats/${g.id}/members/${bob.id}/role`;
-  assert.equal((await request(role,{cookie:bob.cookie,method:"PATCH",body:{role:"admin"}})).status,403);
-  assert.equal((await request(role,{cookie:alice.cookie,method:"PATCH",body:{role:"invalid"}})).status,400);
-  assert.equal((await request(role,{cookie:alice.cookie,method:"PATCH",body:{role:"admin"}})).status,200);
-  assert.equal(server.db.prepare("SELECT role FROM members WHERE chat_id=? AND user_id=?").get(g.id,bob.id).role,"admin");
-  assert.equal((await request(`/api/chats/${g.id}/group`,{cookie:bob.cookie,method:"PATCH",body:{name:"Renamed by admin"}})).status,200);
-  assert.equal((await request(`/api/chats/${g.id}/members/${alice.id}/role`,{cookie:bob.cookie,method:"PATCH",body:{role:"member"}})).status,403);
-  assert.equal((await request(`/api/chats/${g.id}/members/${alice.id}`,{cookie:bob.cookie,method:"DELETE"})).status,403);
-  assert.equal((await request(`/api/chats/${g.id}/invite`,{cookie:eve.cookie,method:"POST"})).status,404);
-  const invite = (await request(`/api/chats/${g.id}/invite`,{cookie:bob.cookie,method:"POST"})).data;
-  assert.equal(invite.token.length,64);
-  assert.notEqual(server.db.prepare("SELECT token_hash FROM group_invites WHERE chat_id=?").get(g.id).token_hash,invite.token);
-  assert.equal((await request(`/api/invites/${invite.token}`)).status,401);
-  const preview = await request(`/api/invites/${invite.token}`,{cookie:eve.cookie});
-  assert.equal(preview.data.group.name,"Renamed by admin");
-  assert.equal(preview.data.group.memberCount,2);
-  assert.equal(preview.data.group.joined,false);
-  assert.equal((await request(`/api/chats/${g.id}/messages`,{cookie:eve.cookie})).status,403);
-  const replacement=(await request(`/api/chats/${g.id}/invite`,{cookie:alice.cookie,method:"POST"})).data;
-  assert.equal((await request(`/api/invites/${invite.token}/join`,{cookie:eve.cookie,method:"POST"})).status,404);
-  assert.equal((await request(`/api/invites/${replacement.token}/join`,{cookie:eve.cookie,method:"POST"})).status,200);
-  assert.equal((await request(`/api/invites/${replacement.token}/join`,{cookie:eve.cookie,method:"POST"})).data.chat.members.length,3);
-  assert.equal((await request(`/api/chats/${g.id}/messages`,{cookie:eve.cookie})).status,200);
-  assert.equal((await request(`/api/chats/${g.id}/invite`,{cookie:eve.cookie,method:"DELETE"})).status,403);
-  assert.equal((await request(`/api/chats/${g.id}/invite`,{cookie:bob.cookie,method:"DELETE"})).status,200);
-  assert.equal((await request(`/api/invites/${replacement.token}`,{cookie:eve.cookie})).status,404);
-  const expired=(await request(`/api/chats/${g.id}/invite`,{cookie:bob.cookie,method:"POST"})).data;
-  server.db.prepare("UPDATE group_invites SET expires=0 WHERE chat_id=?").run(g.id);
-  assert.equal((await request(`/api/invites/${expired.token}/join`,{cookie:eve.cookie,method:"POST"})).status,404);
-  await request(`/api/chats/${g.id}/members/${alice.id}`,{cookie:alice.cookie,method:"DELETE"});
-  assert.equal(server.db.prepare("SELECT owner_id FROM chats WHERE id=?").get(g.id).owner_id,bob.id);
+  assert.equal(
+    (
+      await request(role, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { role: "admin" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(role, {
+        cookie: alice.cookie,
+        method: "PATCH",
+        body: { role: "invalid" },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await request(role, {
+        cookie: alice.cookie,
+        method: "PATCH",
+        body: { role: "admin" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    server.db
+      .prepare("SELECT role FROM members WHERE chat_id=? AND user_id=?")
+      .get(g.id, bob.id).role,
+    "admin",
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/group`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { name: "Renamed by admin" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/members/${alice.id}/role`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { role: "member" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/members/${alice.id}`, {
+        cookie: bob.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/invite`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  const invite = (
+    await request(`/api/chats/${g.id}/invite`, {
+      cookie: bob.cookie,
+      method: "POST",
+    })
+  ).data;
+  assert.equal(invite.token.length, 64);
+  assert.notEqual(
+    server.db
+      .prepare("SELECT token_hash FROM group_invites WHERE chat_id=?")
+      .get(g.id).token_hash,
+    invite.token,
+  );
+  assert.equal((await request(`/api/invites/${invite.token}`)).status, 401);
+  const preview = await request(`/api/invites/${invite.token}`, {
+    cookie: eve.cookie,
+  });
+  assert.equal(preview.data.group.name, "Renamed by admin");
+  assert.equal(preview.data.group.memberCount, 2);
+  assert.equal(preview.data.group.joined, false);
+  assert.equal(
+    (await request(`/api/chats/${g.id}/messages`, { cookie: eve.cookie }))
+      .status,
+    403,
+  );
+  const replacement = (
+    await request(`/api/chats/${g.id}/invite`, {
+      cookie: alice.cookie,
+      method: "POST",
+    })
+  ).data;
+  assert.equal(
+    (
+      await request(`/api/invites/${invite.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/api/invites/${replacement.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/invites/${replacement.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).data.chat.members.length,
+    3,
+  );
+  assert.equal(
+    (await request(`/api/chats/${g.id}/messages`, { cookie: eve.cookie }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/invite`, {
+        cookie: eve.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${g.id}/invite`, {
+        cookie: bob.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/api/invites/${replacement.token}`, { cookie: eve.cookie }))
+      .status,
+    404,
+  );
+  const expired = (
+    await request(`/api/chats/${g.id}/invite`, {
+      cookie: bob.cookie,
+      method: "POST",
+    })
+  ).data;
+  server.db
+    .prepare("UPDATE group_invites SET expires=0 WHERE chat_id=?")
+    .run(g.id);
+  assert.equal(
+    (
+      await request(`/api/invites/${expired.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    404,
+  );
+  await request(`/api/chats/${g.id}/members/${alice.id}`, {
+    cookie: alice.cookie,
+    method: "DELETE",
+  });
+  assert.equal(
+    server.db.prepare("SELECT owner_id FROM chats WHERE id=?").get(g.id)
+      .owner_id,
+    bob.id,
+  );
 });
 
 test("photo/video statuses validate files and enforce current audience, expiry and owner deletion", async () => {
-  const creator=await register("storyauthor","Story author"), viewer=await register("storyviewer","Story viewer"), outsider=await register("storyoutside","Story outsider");
-  const group=(await request("/api/chats",{cookie:creator.cookie,method:"POST",body:{kind:"group",name:"Story audience",members:[viewer.id]}})).data.chat;
-  const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf4UAAAAASUVORK5CYII=","base64");
-  async function upload(buffer,name,type,text="Caption") {
-    const form=new FormData(); form.append("file",new Blob([buffer],{type}),name);form.append("text",text);
-    const res=await fetch(url+"/api/stories/media",{method:"POST",headers:{Cookie:creator.cookie},body:form});
-    return {status:res.status,data:await res.json()};
+  const creator = await register("storyauthor", "Story author"),
+    viewer = await register("storyviewer", "Story viewer"),
+    outsider = await register("storyoutside", "Story outsider");
+  const group = (
+    await request("/api/chats", {
+      cookie: creator.cookie,
+      method: "POST",
+      body: { kind: "group", name: "Story audience", members: [viewer.id] },
+    })
+  ).data.chat;
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf4UAAAAASUVORK5CYII=",
+    "base64",
+  );
+  async function upload(buffer, name, type, text = "Caption") {
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type }), name);
+    form.append("text", text);
+    const res = await fetch(url + "/api/stories/media", {
+      method: "POST",
+      headers: { Cookie: creator.cookie },
+      body: form,
+    });
+    return { status: res.status, data: await res.json() };
   }
-  assert.equal((await upload(Buffer.from("not an image"),"fake.png","image/png")).status,400);
-  assert.equal((await upload(png,"photo.png","image/png","a".repeat(501))).status,400);
-  const image=await upload(png,"photo.png","image/png","Shared photo");assert.equal(image.status,201);
-  const video=await upload(fs.readFileSync(path.join(__dirname,"fixtures/solid-teal.webm")),"clip.webm","video/webm");assert.equal(video.status,201);
-  const listing=(await request("/api/stories",{cookie:viewer.cookie})).data.stories;
-  const photo=listing.find(s=>s.id===image.data.id);assert.equal(photo.text,"Shared photo");assert.equal(photo.media.mime,"image/png");assert.equal("media_path" in photo,false);
-  assert.equal((await fetch(url+photo.media.url)).status,401);
-  assert.equal((await fetch(url+photo.media.url,{headers:{Cookie:viewer.cookie}})).status,200);
-  assert.equal((await fetch(url+photo.media.url,{headers:{Cookie:outsider.cookie}})).status,403);
-  assert.equal((await request("/api/stories",{cookie:outsider.cookie})).data.stories.length,0);
-  assert.equal((await request("/api/stories/"+image.data.id,{cookie:viewer.cookie,method:"DELETE"})).status,404);
-  await request(`/api/chats/${group.id}/members/${viewer.id}`,{cookie:creator.cookie,method:"DELETE"});
-  assert.equal((await fetch(url+photo.media.url,{headers:{Cookie:viewer.cookie}})).status,403);
-  server.db.prepare("UPDATE stories SET expires=0 WHERE id=?").run(video.data.id);
-  assert.equal((await fetch(url+"/api/stories/"+video.data.id+"/media",{headers:{Cookie:creator.cookie}})).status,404);
-  const file=server.db.prepare("SELECT media_path FROM stories WHERE id=?").get(image.data.id).media_path;
-  assert.equal((await request("/api/stories/"+image.data.id,{cookie:creator.cookie,method:"DELETE"})).status,200);
-  assert.equal(fs.existsSync(file),false);
-  assert.equal((await fetch(url+photo.media.url,{headers:{Cookie:creator.cookie}})).status,404);
+  assert.equal(
+    (await upload(Buffer.from("not an image"), "fake.png", "image/png")).status,
+    400,
+  );
+  assert.equal(
+    (await upload(png, "photo.png", "image/png", "a".repeat(501))).status,
+    400,
+  );
+  const image = await upload(png, "photo.png", "image/png", "Shared photo");
+  assert.equal(image.status, 201);
+  const video = await upload(
+    fs.readFileSync(path.join(__dirname, "fixtures/solid-teal.webm")),
+    "clip.webm",
+    "video/webm",
+  );
+  assert.equal(video.status, 201);
+  const listing = (await request("/api/stories", { cookie: viewer.cookie }))
+    .data.stories;
+  const photo = listing.find((s) => s.id === image.data.id);
+  assert.equal(photo.text, "Shared photo");
+  assert.equal(photo.media.mime, "image/png");
+  assert.equal("media_path" in photo, false);
+  assert.equal((await fetch(url + photo.media.url)).status, 401);
+  assert.equal(
+    (await fetch(url + photo.media.url, { headers: { Cookie: viewer.cookie } }))
+      .status,
+    200,
+  );
+  assert.equal(
+    (
+      await fetch(url + photo.media.url, {
+        headers: { Cookie: outsider.cookie },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await request("/api/stories", { cookie: outsider.cookie })).data.stories
+      .length,
+    0,
+  );
+  assert.equal(
+    (
+      await request("/api/stories/" + image.data.id, {
+        cookie: viewer.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    404,
+  );
+  await request(`/api/chats/${group.id}/members/${viewer.id}`, {
+    cookie: creator.cookie,
+    method: "DELETE",
+  });
+  assert.equal(
+    (await fetch(url + photo.media.url, { headers: { Cookie: viewer.cookie } }))
+      .status,
+    403,
+  );
+  server.db
+    .prepare("UPDATE stories SET expires=0 WHERE id=?")
+    .run(video.data.id);
+  assert.equal(
+    (
+      await fetch(url + "/api/stories/" + video.data.id + "/media", {
+        headers: { Cookie: creator.cookie },
+      })
+    ).status,
+    404,
+  );
+  const file = server.db
+    .prepare("SELECT media_path FROM stories WHERE id=?")
+    .get(image.data.id).media_path;
+  assert.equal(
+    (
+      await request("/api/stories/" + image.data.id, {
+        cookie: creator.cookie,
+        method: "DELETE",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(
+    (
+      await fetch(url + photo.media.url, {
+        headers: { Cookie: creator.cookie },
+      })
+    ).status,
+    404,
+  );
 });
 
 test("admin roles, active invites and protected story media survive a server restart", async () => {
-  const group=(await request("/api/chats",{cookie:alice.cookie,method:"POST",body:{kind:"group",name:"Persistent roles",members:[bob.id]}})).data.chat;
-  await request(`/api/chats/${group.id}/members/${bob.id}/role`,{cookie:alice.cookie,method:"PATCH",body:{role:"admin"}});
-  const invite=(await request(`/api/chats/${group.id}/invite`,{cookie:bob.cookie,method:"POST"})).data;
-  const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf4UAAAAASUVORK5CYII=","base64");
-  const form=new FormData();form.append("file",new Blob([png],{type:"image/png"}),"restart.png");
-  const story=await (await fetch(url+"/api/stories/media",{method:"POST",headers:{Cookie:alice.cookie},body:form})).json();
+  const group = (
+    await request("/api/chats", {
+      cookie: alice.cookie,
+      method: "POST",
+      body: { kind: "group", name: "Persistent roles", members: [bob.id] },
+    })
+  ).data.chat;
+  await request(`/api/chats/${group.id}/members/${bob.id}/role`, {
+    cookie: alice.cookie,
+    method: "PATCH",
+    body: { role: "admin" },
+  });
+  const invite = (
+    await request(`/api/chats/${group.id}/invite`, {
+      cookie: bob.cookie,
+      method: "POST",
+    })
+  ).data;
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jf4UAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const form = new FormData();
+  form.append("file", new Blob([png], { type: "image/png" }), "restart.png");
+  const story = await (
+    await fetch(url + "/api/stories/media", {
+      method: "POST",
+      headers: { Cookie: alice.cookie },
+      body: form,
+    })
+  ).json();
   assert.ok(story.id);
-  await server.close();server=createChatServer({dataDir});
-  await new Promise(resolve=>server.http.listen(0,"127.0.0.1",resolve));url=`http://127.0.0.1:${server.http.address().port}`;
-  assert.equal((await request(`/api/chats/${group.id}/group`,{cookie:bob.cookie,method:"PATCH",body:{name:"Still an admin"}})).status,200);
-  assert.equal((await request(`/api/invites/${invite.token}/join`,{cookie:eve.cookie,method:"POST"})).status,200);
-  const media=await fetch(url+`/api/stories/${story.id}/media`,{headers:{Cookie:bob.cookie}});
-  assert.equal(media.status,200);assert.deepEqual(Buffer.from(await media.arrayBuffer()),png);
+  await server.close();
+  server = createChatServer({ dataDir });
+  await new Promise((resolve) => server.http.listen(0, "127.0.0.1", resolve));
+  url = `http://127.0.0.1:${server.http.address().port}`;
+  assert.equal(
+    (
+      await request(`/api/chats/${group.id}/group`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { name: "Still an admin" },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/invites/${invite.token}/join`, {
+        cookie: eve.cookie,
+        method: "POST",
+      })
+    ).status,
+    200,
+  );
+  const media = await fetch(url + `/api/stories/${story.id}/media`, {
+    headers: { Cookie: bob.cookie },
+  });
+  assert.equal(media.status, 200);
+  assert.deepEqual(Buffer.from(await media.arrayBuffer()), png);
 });
 
 test("status view receipts are idempotent, audience-checked, owner-only and removed with expired statuses", async () => {
-  const author=await register("receiptauthor","Receipt author"),viewer=await register("receiptviewer","Receipt viewer"),outsider=await register("receiptstranger","Receipt stranger");
-  await request("/api/chats",{cookie:author.cookie,method:"POST",body:{kind:"direct",members:[viewer.id]}});
-  await request("/api/stories",{cookie:author.cookie,method:"POST",body:{text:"Receipt fixture"}});
-  const story=(await request("/api/stories",{cookie:author.cookie})).data.stories.find(s=>s.user_id===author.id);
-  const route=`/api/stories/${story.id}`;
-  assert.equal((await request(route+"/view",{cookie:outsider.cookie,method:"POST"})).status,403);
-  assert.equal((await request(route+"/view",{cookie:viewer.cookie,method:"POST"})).status,200);
-  const first=(await request(route+"/views",{cookie:author.cookie})).data.views;
-  assert.equal(first.length,1);assert.equal(first[0].user_id,viewer.id);
-  await request(route+"/view",{cookie:viewer.cookie,method:"POST"});await request(route+"/view",{cookie:author.cookie,method:"POST"});
-  assert.deepEqual((await request(route+"/views",{cookie:author.cookie})).data.views,first);
-  assert.equal((await request(route+"/views",{cookie:viewer.cookie})).status,403);
+  const author = await register("receiptauthor", "Receipt author"),
+    viewer = await register("receiptviewer", "Receipt viewer"),
+    outsider = await register("receiptstranger", "Receipt stranger");
+  await request("/api/chats", {
+    cookie: author.cookie,
+    method: "POST",
+    body: { kind: "direct", members: [viewer.id] },
+  });
+  await request("/api/stories", {
+    cookie: author.cookie,
+    method: "POST",
+    body: { text: "Receipt fixture" },
+  });
+  const story = (
+    await request("/api/stories", { cookie: author.cookie })
+  ).data.stories.find((s) => s.user_id === author.id);
+  const route = `/api/stories/${story.id}`;
+  assert.equal(
+    (
+      await request(route + "/view", {
+        cookie: outsider.cookie,
+        method: "POST",
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await request(route + "/view", { cookie: viewer.cookie, method: "POST" }))
+      .status,
+    200,
+  );
+  const first = (await request(route + "/views", { cookie: author.cookie }))
+    .data.views;
+  assert.equal(first.length, 1);
+  assert.equal(first[0].user_id, viewer.id);
+  await request(route + "/view", { cookie: viewer.cookie, method: "POST" });
+  await request(route + "/view", { cookie: author.cookie, method: "POST" });
+  assert.deepEqual(
+    (await request(route + "/views", { cookie: author.cookie })).data.views,
+    first,
+  );
+  assert.equal(
+    (await request(route + "/views", { cookie: viewer.cookie })).status,
+    403,
+  );
   server.db.prepare("UPDATE stories SET expires=0 WHERE id=?").run(story.id);
-  assert.equal((await request(route+"/view",{cookie:viewer.cookie,method:"POST"})).status,404);
-  assert.equal((await request(route+"/views",{cookie:author.cookie})).status,404);
-  await request(route,{cookie:author.cookie,method:"DELETE"});
-  assert.equal(server.db.prepare("SELECT count(*) AS n FROM story_views WHERE story_id=?").get(story.id).n,0);
+  assert.equal(
+    (await request(route + "/view", { cookie: viewer.cookie, method: "POST" }))
+      .status,
+    404,
+  );
+  assert.equal(
+    (await request(route + "/views", { cookie: author.cookie })).status,
+    404,
+  );
+  await request(route, { cookie: author.cookie, method: "DELETE" });
+  assert.equal(
+    server.db
+      .prepare("SELECT count(*) AS n FROM story_views WHERE story_id=?")
+      .get(story.id).n,
+    0,
+  );
 });
 
-test("the vendored Unicode 17 emoji catalog has local licensed artwork for every base and skin variant",()=>{
-  const vm=require("node:vm");
-  const source=fs.readFileSync(path.join(__dirname,"../public/emoji-data.js"),"utf8");
-  const catalog=vm.runInNewContext(source+";emojiCatalog");
-  assert.equal(catalog.length,3953);
-  assert.equal(new Set(catalog.map(e=>e.emoji)).size,catalog.length);
-  for(const entry of catalog){
-    assert.match(entry.asset,/^emoji_u[a-f0-9_]+\.svg$/);
-    const svg=fs.readFileSync(path.join(__dirname,"../public/emoji",entry.asset),"utf8");
+test("the vendored Unicode 17 emoji catalog has local licensed artwork for every base and skin variant", () => {
+  const vm = require("node:vm");
+  const source = fs.readFileSync(
+    path.join(__dirname, "../public/emoji-data.js"),
+    "utf8",
+  );
+  const catalog = vm.runInNewContext(source + ";emojiCatalog");
+  assert.equal(catalog.length, 3953);
+  assert.equal(new Set(catalog.map((e) => e.emoji)).size, catalog.length);
+  for (const entry of catalog) {
+    assert.match(entry.asset, /^emoji_u[a-f0-9_]+\.svg$/);
+    const svg = fs.readFileSync(
+      path.join(__dirname, "../public/emoji", entry.asset),
+      "utf8",
+    );
     assert.ok(svg.includes("<svg"));
-    assert.doesNotMatch(svg,/<script|<foreignObject|\bon\w+\s*=|(?:href|src)=["']https?:/i);
+    assert.doesNotMatch(
+      svg,
+      /<script|<foreignObject|\bon\w+\s*=|(?:href|src)=["']https?:/i,
+    );
   }
-  for(const file of ["Apache-2.0.txt","Noto-APACHE-NOTICE.txt","Flags-LICENSE.txt","Emojibase-LICENSE.txt"])assert.ok(fs.existsSync(path.join(__dirname,"../public/emoji",file)));
+  for (const file of [
+    "Apache-2.0.txt",
+    "Noto-APACHE-NOTICE.txt",
+    "Flags-LICENSE.txt",
+    "Emojibase-LICENSE.txt",
+  ])
+    assert.ok(fs.existsSync(path.join(__dirname, "../public/emoji", file)));
 });

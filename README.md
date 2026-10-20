@@ -33,15 +33,15 @@ To try both sides of a conversation, open a second browser profile or an incogni
 
 ## Features
 
-| Conversations              | Messages                             | The details                       |
-| -------------------------- | ------------------------------------ | --------------------------------- |
-| Direct and group chats     | Text, photos, audio, video and PDFs  | Dark and light themes             |
-| Persistent SQLite history  | Record, preview and send voice notes | Responsive mobile navigation      |
-| Delivery and read receipts | Quote replies, forwarding and stars  | Per-chat drafts across reloads    |
-| Online and last seen       | Delete for yourself or everyone      | Pin, mute and archive             |
-| Typing and unread counts   | Emoji and safe clickable links       | Right-click and touch menus       |
-| Full-history search        | Shared-media gallery                 | Profile pictures and about lines  |
-| Membership-checked access  | Idempotent message retries           | Text/photo/video statuses (24h) |
+| Conversations              | Messages                             | The details                      |
+| -------------------------- | ------------------------------------ | -------------------------------- |
+| Direct and group chats     | Text, photos, audio, video and PDFs  | Dark and light themes            |
+| Persistent SQLite history  | Record, preview and send voice notes | Responsive mobile navigation     |
+| Delivery and read receipts | Quote replies, forwarding and stars  | Per-chat drafts across reloads   |
+| Online and last seen       | Delete for yourself or everyone      | Pin, mute and archive            |
+| Typing and unread counts   | Emoji and safe clickable links       | Right-click and touch menus      |
+| Full-history search        | Shared-media gallery                 | Profile pictures and about lines |
+| Membership-checked access  | Idempotent message retries           | Text/photo/video statuses (24h)  |
 
 The emoji picker includes the complete pinned Unicode 17 catalog: 3,953 local Noto glyphs with categories, keyword search and skin variants. Noto artwork is not WhatsApp artwork.
 
