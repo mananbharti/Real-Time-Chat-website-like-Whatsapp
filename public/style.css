@@ -4541,3 +4541,6 @@ select {
   background: var(--header);
   margin: 4px 0;
 }
+body:has(#info-dialog[open]) .chat-header [aria-label="Manage group"] {
+  display: none;
+}

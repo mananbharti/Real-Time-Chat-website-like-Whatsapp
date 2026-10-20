@@ -3433,6 +3433,17 @@ $("chat-info").addEventListener("click", () => {
     );
   }
 });
+$("chat-info").addEventListener("click", () => {
+  if (active()?.kind === "group")
+    toolButton($("info-content"), "Manage group", () => {
+      $("info-dialog").close();
+      groupTools.click();
+    });
+  toolButton($("info-content"), "Media gallery", () => {
+    $("info-dialog").close();
+    galleryButton.click();
+  });
+});
 
 // Reuse the working history-search surface without hiding the server-backed route.
 const searchPanel = $("message-search-bar");
