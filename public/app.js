@@ -79,6 +79,7 @@ function showAuth() {
   socket?.disconnect();
   if (recorder) stopRecording(true);
   me = null;
+  manuallyLoadedMedia.clear();
   chats.clear();
   messages = [];
   activeId = null;
@@ -1641,8 +1642,8 @@ galleryButton.addEventListener("click", async () => {
       const a = m.attachment,
         link = el("a", "gallery-item");
       link.href = "/api/attachments/" + a.id;
-      link.target = "_blank";
-      link.rel = "noopener";
+      if(/^(image|video)\//.test(a.mime))link.addEventListener("click",e=>{e.preventDefault();toolsDialog.close();openMediaViewer(m,result.messages)});
+      else{link.target="_blank";link.rel="noopener"}
       if (a.mime.startsWith("image/")) {
         const img = el("img");
         img.src = link.href;
