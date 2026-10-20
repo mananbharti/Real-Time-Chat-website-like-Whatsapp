@@ -43,7 +43,7 @@ const typers = new Map(),
 try {
   document.body.classList.toggle(
     "light",
-    localStorage.getItem("chat-theme") === "light",
+    localStorage.getItem("chat-theme") !== "dark",
   );
 } catch {}
 const active = () => chats.get(activeId);
@@ -123,11 +123,11 @@ function preview(m) {
         : "📄 " + (m.attachment?.filename || "Attachment");
 }
 function clock(date) {
-  return new Date(date).toLocaleTimeString([], {
-    hour: "2-digit",
+  return new Date(date).toLocaleTimeString("en-US", {
+    hour: "numeric",
     minute: "2-digit",
-    hour12: false,
-  });
+    hour12: true,
+  }).toLowerCase();
 }
 function tickState(m, chat) {
   const others = chat.members.filter((u) => u.id !== me.id);
@@ -287,9 +287,11 @@ function markRead() {
 function buildMessage(m) {
   const mine = m.senderId === me.id,
     c = active();
-  const li = el("li", `message${mine ? " mine" : ""}`);
+  const previous=messages[messages.findIndex(x=>x.id===m.id)-1];
+  const hasTail=!previous||previous.senderId!==m.senderId||Date.parse(m.createdAt)-Date.parse(previous.createdAt)>300000;
+  const li = el("li", `message${mine ? " mine" : ""}${hasTail?" has-tail":""}`);
   li.dataset.messageId = m.id;
-  if (c.kind === "group" && !mine)
+  if (c.kind === "group" && !mine && hasTail)
     li.append(el("span", "message-author", m.senderName));
   if (m.forwarded) li.append(el("span", "forward-label", "↪ Forwarded"));
   if (m.deletedAt) {
@@ -1210,7 +1212,7 @@ function toggleTheme() {
 }
 $("theme-button").addEventListener("click", toggleTheme);
 $("account-button").addEventListener("click", () => showAccount());
-$("mobile-account").addEventListener("click", () => showAccount());
+$("mobile-account").addEventListener("click", () => showMainMenu());
 $("close-account").addEventListener("click", () => $("account-dialog").close());
 $("logout").addEventListener("click", async () => {
   try {
@@ -1455,6 +1457,7 @@ function appendRenderedMessage(m, force = false) {
   searchMessages();
 }
 const statusButton = el("button", "icon-button", "◉");
+statusButton.id="status-button";
 statusButton.type = "button";
 statusButton.setAttribute("aria-label", "Status updates");
 statusButton.title = "Status updates";
@@ -1612,7 +1615,7 @@ showAccount = function () {
 $("account-button").removeEventListener("click", originalAccount);
 $("mobile-account").removeEventListener("click", originalAccount);
 $("account-button").addEventListener("click", () => showAccount());
-$("mobile-account").addEventListener("click", () => showAccount());
+$("mobile-account").addEventListener("click", () => showMainMenu());
 const galleryButton = el("button", "icon-button", "▧");
 galleryButton.type = "button";
 galleryButton.setAttribute("aria-label", "Media gallery");
@@ -2085,3 +2088,42 @@ lockForm.addEventListener('submit',async(event)=>{event.preventDefault();unlockB
 const unlockedAccount=showAccount;showAccount=function(){unlockedAccount();toolButton($('account-info'),'Lock app',async()=>{await api('/api/lock',{method:'POST',body:'{}'});showLock();});};
 // Match the rest of the outline icon set, rather than using a text glyph.
 groupTools.textContent='';groupTools.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v2"/></svg>';
+
+const notificationNotice=el('div','notification-notice');
+notificationNotice.innerHTML='<svg viewBox="0 0 24 24"><path d="M3 3l18 18M7 7a5 5 0 0 0-1 3v6l-2 2h14M10 21h4M9 4a5 5 0 0 1 8 4v5"/></svg>';
+const notificationText=el('span','','Message notifications are off. '),notificationEnable=el('button','','Turn on'),notificationDismiss=el('button','notification-dismiss','×');notificationEnable.type='button';notificationDismiss.type='button';notificationDismiss.setAttribute('aria-label','Dismiss notification notice');notificationEnable.addEventListener('click',async()=>{if(window.Notification){const p=await Notification.requestPermission();if(p==='granted'){localStorage.setItem('chat-notifications-'+me.id,'yes');notificationNotice.hidden=true;}}});notificationDismiss.addEventListener('click',()=>notificationNotice.hidden=true);notificationText.append(notificationEnable);notificationNotice.append(notificationText,notificationDismiss);document.querySelector('.filters').after(notificationNotice);notificationNotice.hidden=typeof Notification==='undefined'||Notification.permission==='granted';
+// Attachments and polls share the measured plus control, rather than extra composer icons.
+$('attach-button').replaceWith($('attach-button').cloneNode(true));
+$('attach-button').innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+$('attach-button').addEventListener('click',()=>{const r=$('attach-button').getBoundingClientRect(),box=showTools('Attach',{x:r.x,y:r.y-160});toolButton(box,'Photos, videos and documents',()=>{$('file-input').click();toolsDialog.close();});toolButton(box,'Poll',createPoll);});
+pollButton.hidden=true;
+$('new-chat').innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+$('mobile-account').before($('mobile-account'));document.querySelector('.sidebar-header>div').append($('new-chat'));
+document.querySelector('.sidebar-header h1').textContent='WhatsApp';
+
+$("show-chats").after(statusButton);
+
+const baseAccountScreen=showAccount;
+showAccount=function(){
+  baseAccountScreen();
+  const dialog=$('account-dialog');dialog.classList.add('settings-drawer');$('account-title').textContent=me.name;
+  const box=$('account-info');const summary=el('section','settings-profile');const profile=userAvatar(me);profile.classList.add('settings-avatar');const thought=el('button','settings-thought',me.about||'Share a thought');thought.type='button';thought.addEventListener('click',()=>box.querySelector('[data-profile-edit]')?.click());summary.append(thought,profile);box.prepend(summary);
+  const search=el('input','settings-search');search.placeholder='Search';search.setAttribute('aria-label','Search settings');dialog.querySelector('header').after(search);search.addEventListener('input',()=>{for(const b of box.querySelectorAll('.tool-row'))b.hidden=!b.textContent.toLowerCase().includes(search.value.toLowerCase());});
+  const edit=[...box.querySelectorAll('.tool-row')].find(b=>b.textContent==='Edit profile');if(edit){edit.dataset.profileEdit='true';edit.classList.add('settings-row');edit.replaceChildren(el('span','settings-row-icon','◎'),el('span','settings-row-title','Profile'),el('small','','Name, profile picture, username'));}
+  for(const b of box.querySelectorAll('.tool-row'))b.classList.add('settings-row');
+};
+$('account-dialog').addEventListener('close',()=>{document.querySelectorAll('.settings-search').forEach(e=>e.remove());});
+
+function showMainMenu(){
+ const r=$('mobile-account').getBoundingClientRect(),box=showTools('Main menu',{x:r.x,y:r.bottom+4});box.classList.add('main-context');
+ const item=(label,icon,fn)=>{const b=toolButton(box,label,fn);const span=el('span','menu-row-icon');span.innerHTML=menuReferenceIcons[icon]||'';b.prepend(span);return b;};
+ item('New group','Reply',()=>{toolsDialog.close();showContacts();$('group-mode').click();});
+ item('Starred messages','Star',()=>{toolsDialog.close();showAccount();[...$('account-info').querySelectorAll('.settings-row')].find(x=>x.textContent.startsWith('Chats'))?.click();});
+ item('Select chats','Copy',()=>toast('Bulk chat selection is not yet implemented.'));
+ item('Mark all as read','Reply',()=>{for(const c of chats.values()){if(c.last)socket?.emit('chat:read',{chatId:c.id,seq:c.last.seq});c.unread=0;}renderChats();toolsDialog.close();});
+ item('App lock','Delete',async()=>{await api('/api/lock',{method:'POST',body:'{}'});showLock();});
+ item('Log out','Forward',()=>{toolsDialog.close();$('logout').click();});
+ box.style.left=Math.max(8,Math.min(r.x,innerWidth-190))+'px';box.style.top=(r.bottom+4)+'px';
+}
+
+if(menuReferenceIcons['Ask Meta AI']){ai.innerHTML=menuReferenceIcons['Ask Meta AI'];ai.classList.add('reference-icon');}

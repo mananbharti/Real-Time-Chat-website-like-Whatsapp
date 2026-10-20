@@ -7,3 +7,13 @@ The live interface differs from older WhatsApp Web designs: it uses a Roboto Var
 Those measured typography and surface details informed the next styling pass. The included Roboto font is distributed under its own license in `public/fonts/Roboto-LICENSE.txt`.
 
 This is a partial, read-only visual reference pass, **not** an assertion that all WhatsApp screens, dark-theme states, animations or micro-interactions have been exhaustively measured and matched. Features such as calls and end-to-end encryption remain outside this implementation. Further parity work should use a screen/state checklist and real-device testing rather than an unqualified "pixel-perfect" claim.
+
+## Measured light-theme pass, October 16
+
+At a 1280 x 713 viewport, the official linked reference used a 65px rail and 511px chat-list column; chat view began at x=576. Its header was 64px high, search surface 40px, filter pills 32px, list rows had a 76px pitch with a 72px selected surface, and list avatars were 48px. The floating composer was 52px high, inset 12px with a 26px radius. Chat text measured 14px/20px and the input 15px/22.05px. These measurements now drive the desktop layout rather than the earlier older-design assumptions.
+
+The current build uses the public default doodle wallpaper mask from the observed static asset URL `https://static.whatsapp.net/rsrc.php/yx/r/voSdkk88H7C.svg`, with its measured 540 x 960px tile, `#EAE0D3` fill and 0.6 opacity over `#F5F1EB`. This is a third-party reference asset, not project-original artwork. Navigation/menu icons were transcribed from the inspected reference; they carry no account data. Do not present these assets or the wordmark as evidence of affiliation. An independent production release should review branding and asset rights.
+
+Settings are being reworked from a centered modal to the reference sidebar layout. Unsupported capabilities are identified rather than backed by fake success responses. Calls, Channels, Communities and Meta AI rail controls are visual reference surfaces with clear unavailable notices, not implemented services.
+
+Pixel parity is still NOT complete. Sanitized side-by-side images use opaque masks on private reference fields and synthetic local conversations; different message data makes them layout comparisons, not a valid whole-image similarity score. Remaining checks include equivalent message states, every menu and settings subpage, theme/responsive variants, focus/hover transitions and real-device behavior.

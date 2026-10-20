@@ -33,3 +33,9 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 - Exhaustive authenticated WhatsApp screen/state parity.
 
 Use synthetic data in documentation. Keep personal reference screens, chat text and account information out of this repository.
+
+## Current visual-pass status
+
+The existing-screen parity pass is active; new feature work is paused. Measured and rendered at 1280 x 713: rail 65px; sidebar 511px; chat header 704 x 64px at x=576; composer 680 x 52px at (588,649), 26px radius. These are component measurements, not a claim that all screens are identical.
+
+Inspected comparisons: full chat/list shell with private reference fields masked; same-size composer crops; public-only incoming context menu surfaces; sidebar settings surface with personal reference name/avatar masked. The build now follows the current light reference, not an older dark Web screenshot. Settings still has different available rows, custom filter pills differ from the user's personal folders, menu action coverage differs, independent-app security notices are intentionally accurate, and empty-state artwork is not matched. Calls/Meta AI/Channels/Communities navigation is visibly present but unavailable, with honest notices. Keep that distinction when presenting screenshots.

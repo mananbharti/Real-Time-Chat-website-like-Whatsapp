@@ -142,7 +142,7 @@ function createChatServer(options = {}) {
     res.setHeader("Referrer-Policy", "same-origin");
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' blob: data:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ws: wss:; img-src 'self' https://static.whatsapp.net blob: data:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
     );
     if (req.path.startsWith("/api/"))
       res.setHeader("Cache-Control", "no-store");
