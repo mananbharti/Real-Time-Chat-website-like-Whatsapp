@@ -202,7 +202,10 @@ test("chat pin/mute/archive, message star/forward/delete/info, status and profil
     .getByRole("button", { name: "Message actions" })
     .click();
   await a.getByRole("button", { name: "Message info", exact: true }).click();
-  await expect(a.locator("#tools-dialog")).toContainText("Read:");
+  await expect(a.locator(".receipt-heading").first()).toHaveText("✓✓Read");
+  await expect(a.locator(".receipt-section")).toHaveCount(2);
+  await expect(a.locator(".receipt-direct-time").first()).toContainText("Today at");
+  await expect(a.locator(".receipt-direct-time").first()).not.toContainText("Not yet");
   await a.getByRole("button", { name: "Close tools" }).click();
   await a.getByRole("button", { name: "Chat options", exact: true }).click();
   await a.getByRole("button", { name: "Pin chat", exact: true }).click();

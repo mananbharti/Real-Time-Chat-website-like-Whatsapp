@@ -1355,22 +1355,22 @@ function showMessageMenu(m, point) {
     toolButton(box, "Message info", async () => {
       const result = await api(`/api/messages/${m.id}/info`),
         info = showTools("Message info");
-      info.append(
-        el(
-          "p",
-          "info-note",
-          "Sent " + new Date(result.createdAt).toLocaleString(),
-        ),
-      );
-      for (const u of active().members.filter((u) => u.id !== me.id)) {
-        const r = result.receipts.find((r) => r.user_id === u.id);
-        info.append(
-          el(
-            "p",
-            "info-note",
-            `${u.name}\nDelivered: ${r?.delivered_at ? new Date(r.delivered_at).toLocaleString() : "Not yet"}\nRead: ${r?.read_at ? new Date(r.read_at).toLocaleString() : "Not yet"}`,
-          ),
-        );
+      info.classList.add("message-info-drawer");
+      const quoted=el("section","receipt-message-preview");
+      const bubble=el("div","receipt-preview-bubble",m.text || (m.poll ? m.poll.question : m.attachment?.filename || "Deleted message"));
+      quoted.append(bubble,el("time","",new Date(result.createdAt).toLocaleString()));
+      info.append(quoted);
+      const receiptMembers=active().members.filter(u=>u.id!==me.id);
+      for (const [title,key] of [["Read by","read_at"],["Delivered to","delivered_at"]]) {
+        const section=el("section","receipt-section"), heading=el("h3","receipt-heading");
+        const tick=el("span","receipt-tick",key==="read_at"?"✓✓":"✓✓");tick.classList.toggle("read",key==="read_at");
+        heading.append(tick,el("span","",title));section.append(heading);
+        for (const user of receiptMembers) {
+          const receipt=result.receipts.find(r=>r.user_id===user.id),row=el("div","receipt-person"),text=el("div");
+          text.append(el("strong","",user.name),el("time","",receipt?.[key]?new Date(receipt[key]).toLocaleString():"Not yet"));
+          row.append(userAvatar(user),text);section.append(row);
+        }
+        info.append(section);
       }
     });
   toolButton(
