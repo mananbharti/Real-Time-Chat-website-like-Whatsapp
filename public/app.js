@@ -603,12 +603,13 @@ function saveChatSetting(key, value) {
   $("message-input").spellcheck = chatSettings().spellcheck;
   renderMessages();
 }
+const manualMediaLoads = new Set();
 function mountMedia(container, node, url, kind) {
   const allowed =
     chatSettings()[
       { photo: "autoPhotos", audio: "autoAudio", video: "autoVideos" }[kind]
     ];
-  if (allowed) {
+  if (allowed || manualMediaLoads.has(url)) {
     node.src = url;
     container.append(node);
     return;
@@ -618,6 +619,7 @@ function mountMedia(container, node, url, kind) {
   load.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    manualMediaLoads.add(url);
     node.src = url;
     load.replaceWith(node);
   });
@@ -2843,7 +2845,7 @@ $("attach-button").addEventListener("click", () => {
   });
   toolButton(box, "Poll", createPoll);
 });
-pollButton.hidden = true;
+
 $("new-chat").innerHTML =
   '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 $("mobile-account").before($("mobile-account"));
