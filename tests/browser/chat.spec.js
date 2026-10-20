@@ -304,3 +304,53 @@ test("durable per-chat drafts, working safe links, full-history search and keybo
   await ac.close();
   await bc.close();
 });
+
+test("double-click, mobile swipe and long-press operate on real messages", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext({ hasTouch: true }),
+    bc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage(),
+    id = stamp();
+  await register(a, "Jamie", "jamie_" + id);
+  await register(b, "Robin", "robin_" + id);
+  await direct(a, "Robin");
+  await send(a, "Gesture target");
+  await a.locator(".message-text").dblclick();
+  await expect(a.locator("#reply-bar")).toBeVisible();
+  await a.getByRole("button", { name: "Cancel reply" }).click();
+  await a.setViewportSize({ width: 390, height: 844 });
+  const message = a.locator(".message-text");
+  await message.dispatchEvent("touchstart", {
+    changedTouches: [{ identifier: 1, clientX: 50, clientY: 300 }],
+    touches: [{ identifier: 1, clientX: 50, clientY: 300 }],
+  });
+  await message.dispatchEvent("touchend", {
+    changedTouches: [{ identifier: 1, clientX: 150, clientY: 300 }],
+    touches: [],
+  });
+  await expect(a.locator("#reply-bar")).toBeVisible();
+  await a.getByRole("button", { name: "Cancel reply" }).click();
+  await message.dispatchEvent("touchstart", {
+    changedTouches: [{ identifier: 1, clientX: 100, clientY: 300 }],
+    touches: [{ identifier: 1, clientX: 100, clientY: 300 }],
+  });
+  await expect(a.locator("#tools-dialog")).toBeVisible();
+  await message.dispatchEvent("touchend", {
+    changedTouches: [{ identifier: 1, clientX: 100, clientY: 300 }],
+    touches: [],
+  });
+  await expect(a.locator("#tools-dialog")).toContainText("Reply");
+  await a.getByRole("button", { name: "Close tools" }).click();
+  for (const width of [320, 375, 768, 1440]) {
+    await a.setViewportSize({ width, height: 844 });
+    expect(
+      await a.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await ac.close();
+  await bc.close();
+});
