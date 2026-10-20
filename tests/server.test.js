@@ -614,3 +614,24 @@ test("group ownership protects member changes and removal immediately revokes hi
     bob.id,
   );
 });
+
+test('polls validate membership, options and vote policy; changes survive history reads',async()=>{
+ const created=await request(`/api/chats/${chat.id}/polls`,{cookie:alice.cookie,method:'POST',body:{question:'Lunch?',options:['Pizza','Salad'],multiple:false}});assert.equal(created.status,201);const id=created.data.message.id;
+ assert.equal((await request(`/api/messages/${id}/votes`,{cookie:eve.cookie,method:'PUT',body:{options:[0]}})).status,404);
+ assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[0,1]}})).status,400);
+ assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[2]}})).status,400);
+ assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[1]}})).status,200);
+ const history=await request(`/api/chats/${chat.id}/messages`,{cookie:alice.cookie});const poll=history.data.messages.find(m=>m.id===id).poll;assert.deepEqual(poll.votes[0].options,[1]);assert.equal(poll.votes[0].userId,bob.id);
+ assert.equal((await request(`/api/messages/${id}/votes`,{cookie:bob.cookie,method:'PUT',body:{options:[]}})).status,200);
+ assert.equal((await request(`/api/chats/${chat.id}/polls`,{cookie:alice.cookie,method:'POST',body:{question:'Duplicates',options:['A','a']}})).status,400);
+});
+test('app lock revokes API and live-socket access until password reauthentication',async()=>{
+ const user=await register('lock_test','Lock test');const live=await connect(user);const disconnected=new Promise(r=>live.once('disconnect',r));
+ assert.equal((await request('/api/lock',{cookie:user.cookie,method:'POST',body:{}})).status,200);await disconnected;
+ assert.equal((await request('/api/me',{cookie:user.cookie})).status,423);assert.equal((await request('/api/chats',{cookie:user.cookie})).status,423);
+ await assert.rejects(connect(user),/App locked/);
+ assert.equal((await request('/api/unlock',{cookie:user.cookie,method:'POST',body:{password:'bad'}})).status,401);
+ assert.equal((await request('/api/me',{cookie:user.cookie})).status,423);
+ assert.equal((await request('/api/unlock',{cookie:user.cookie,method:'POST',body:{password:'test-fixture-password-123'}})).status,200);
+ assert.equal((await request('/api/me',{cookie:user.cookie})).status,200);assert.ok((await connect(user)).connected);
+});

@@ -6,6 +6,13 @@ const el = (tag, cls, text) => {
   if (text != null) e.textContent = text;
   return e;
 };
+const emojiAssets={"🎉": "1F389", "😢": "1F622", "😎": "1F60E", "📷": "1F4F7", "💯": "1F4AF", "✅": "2705", "😊": "1F60A", "🙏": "1F64F", "😭": "1F62D", "🙌": "1F64C", "🤔": "1F914", "👏": "1F44F", "❤️": "2764-FE0F", "😮": "1F62E", "✨": "2728", "🎙": "1F399", "☕": "2615", "👀": "1F440", "😀": "1F600", "😂": "1F602", "👎": "1F44E", "💚": "1F49A", "😍": "1F60D", "🥳": "1F973", "👍": "1F44D", "🔥": "1F525"};
+function colorEmoji(root){
+ const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+ const keys=Object.keys(emojiAssets).sort((a,b)=>b.length-a.length);
+ for(const node of nodes){if(node.parentElement?.closest('a,.sr-only'))continue;const text=node.data;let cursor=0,fragment=document.createDocumentFragment(),plain='';while(cursor<text.length){const found=keys.find(e=>text.startsWith(e,cursor));if(found){if(plain){fragment.append(document.createTextNode(plain));plain='';}const image=document.createElement('img');image.className='color-emoji';image.src='/emoji/'+emojiAssets[found]+'.svg';image.alt='';image.setAttribute('aria-hidden','true');const spoken=document.createElement('span');spoken.className='sr-only';spoken.textContent=found;fragment.append(image,spoken);cursor+=found.length;}else{plain+=text[cursor++];}}if(plain)fragment.append(document.createTextNode(plain));node.replaceWith(fragment);}
+}
+
 let me = null,
   socket = null,
   activeId = null,
@@ -62,7 +69,8 @@ async function api(url, options = {}) {
   });
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401 && me) showAuth();
+    if(response.status===423)showLock();
+    else if (response.status === 401 && me && url!=="/api/unlock") showAuth();
     throw new Error(result.error || "Request failed.");
   }
   return result;
@@ -312,6 +320,7 @@ function buildMessage(m) {
       });
       li.append(q);
     }
+    if(m.poll)li.append(buildPoll(m));
     if (m.attachment) {
       const a = m.attachment,
         url = "/api/attachments/" + a.id;
@@ -349,9 +358,10 @@ function buildMessage(m) {
         li.append(link);
       }
     }
-    if (m.text) {
+    if (m.text && !m.poll) {
       const paragraph = el("p", "message-text");
       appendLinkedText(paragraph, m.text);
+      colorEmoji(paragraph);
       li.append(paragraph);
       const url = m.text.match(/https?:\/\/[^\s<>]+/i)?.[0];
       if (url) {
@@ -399,6 +409,7 @@ function buildMessage(m) {
             : ""),
         emoji + (count > 1 ? " " + count : ""),
       );
+      colorEmoji(b);
       b.type = "button";
       b.setAttribute("aria-label", "Reaction " + emoji + ", " + count);
       b.title = m.reactions
@@ -582,10 +593,11 @@ async function start(user) {
       toast(e.message);
     }
   });
+  socket.on("session:locked",()=>showLock());
   socket.on("disconnect", (reason) => {
     $("connection-status").textContent = "Offline · reconnecting";
     updateComposer();
-    if (reason === "io server disconnect") {
+    if (reason === "io server disconnect" && !appLocked) {
       showAuth();
       toast("Your session ended. Sign in again.");
     }
@@ -593,6 +605,7 @@ async function start(user) {
   socket.on("connect_error", (e) => {
     $("connection-status").textContent = "Connection interrupted";
     if (/Sign in/.test(e.message)) showAuth();
+    if(/App locked/.test(e.message))showLock();
   });
   socket.on("chat-updated", ({ chat }) => {
     chats.set(chat.id, chat);
@@ -1002,6 +1015,7 @@ for (const emoji of emojis) {
     input.dispatchEvent(new Event("input"));
     input.focus();
   });
+  colorEmoji(b);
   $("emoji-picker").append(b);
 }
 $("emoji-button").addEventListener(
@@ -1195,8 +1209,8 @@ function toggleTheme() {
   );
 }
 $("theme-button").addEventListener("click", toggleTheme);
-$("account-button").addEventListener("click", showAccount);
-$("mobile-account").addEventListener("click", showAccount);
+$("account-button").addEventListener("click", () => showAccount());
+$("mobile-account").addEventListener("click", () => showAccount());
 $("close-account").addEventListener("click", () => $("account-dialog").close());
 $("logout").addEventListener("click", async () => {
   try {
@@ -1286,6 +1300,7 @@ function showMessageMenu(m, point) {
     const reactions = el("div", "reaction-picker");
     for (const emoji of ["👍", "❤️", "😂", "😮", "😢", "🙏"]) {
       const button = el("button", "", emoji);
+      colorEmoji(button);
       button.type = "button";
       button.setAttribute("aria-label", "React " + emoji);
       button.addEventListener("click", async () => {
@@ -1296,7 +1311,7 @@ function showMessageMenu(m, point) {
     }
     box.append(reactions);
     if (
-      m.senderId === me.id &&
+      !m.poll && m.senderId === me.id &&
       Date.now() - Date.parse(m.createdAt) < 15 * 60000
     )
       toolButton(box, "Edit message", () => editMessage(m));
@@ -1319,7 +1334,7 @@ function showMessageMenu(m, point) {
       renderMessages();
       toolsDialog.close();
     });
-    toolButton(box, "Forward", () => {
+    if(!m.poll)toolButton(box, "Forward", () => {
       const list = showTools("Forward to");
       for (const c of chats.values())
         toolButton(list, c.name, async () => {
@@ -2024,3 +2039,49 @@ const showGroupButton = () => {
 };
 $("chat-list").addEventListener("click", showGroupButton);
 groupTools.hidden = true;
+
+// Poll options are server-backed and vote changes are broadcast to every member.
+function buildPoll(message) {
+  const box=el('section','poll-card'),poll=message.poll;
+  box.append(el('h3','poll-question',message.text),el('p','poll-hint',poll.multiple?'Select one or more':'Select one'));
+  const mine=poll.votes.find(v=>v.userId===me.id)?.options||[];
+  const total=poll.votes.filter(v=>v.options.length).length;
+  poll.options.forEach((label,index)=>{
+    const count=poll.votes.filter(v=>v.options.includes(index)).length;
+    const button=el('button','poll-option'+(mine.includes(index)?' chosen':''));button.type='button';
+    button.setAttribute('aria-pressed',String(mine.includes(index)));button.setAttribute('aria-label','Vote for '+label);
+    const line=el('span','poll-option-line');line.append(el('span','poll-circle',mine.includes(index)?'✓':''),el('span','',label),el('span','poll-count',String(count)));
+    const track=el('span','poll-track'),bar=el('span','poll-bar');bar.style.width=(total?count/total*100:0)+'%';track.append(bar);button.append(line,track);
+    button.addEventListener('click',async()=>{button.disabled=true;try{const next=poll.multiple?(mine.includes(index)?mine.filter(i=>i!==index):[...mine,index]):(mine.includes(index)?[]:[index]);await api(`/api/messages/${message.id}/votes`,{method:'PUT',body:JSON.stringify({options:next})});}catch(e){toast(e.message);}finally{button.disabled=false;}});box.append(button);
+  });
+  const details=el('button','poll-details','View votes · '+total+' voter'+(total===1?'':'s'));details.type='button';details.addEventListener('click',()=>{const list=showTools('Poll votes');list.append(el('p','info-note','Votes are visible to all chat members.'));for(const vote of poll.votes.filter(v=>v.options.length))list.append(el('p','info-note',vote.name+': '+vote.options.map(i=>poll.options[i]).join(', ')));if(!total)list.append(el('p','info-note','No votes yet.'));});box.append(details);return box;
+}
+function createPoll(){
+  if(!active())return;const chatId=activeId,box=showTools('Create poll'),question=el('input'),fields=el('div','poll-fields');question.placeholder='Ask a question';question.maxLength=250;question.setAttribute('aria-label','Poll question');box.append(el('label','','Question'),question,el('label','','Options'),fields);
+  const add=()=>{const input=el('input');input.maxLength=100;input.placeholder='Add an option';input.setAttribute('aria-label','Poll option '+(fields.children.length+1));fields.append(input);};add();add();
+  const more=toolButton(box,'Add option',()=>{if(fields.children.length<12)add();if(fields.children.length>=12)more.hidden=true;});
+  const multiple=el('input');multiple.type='checkbox';multiple.checked=true;multiple.id='poll-multiple';const label=el('label','poll-multiple','Allow multiple answers');label.prepend(multiple);box.append(label,el('p','info-note','Votes are visible to all chat members.'));
+  toolButton(box,'Send poll',async()=>{await api(`/api/chats/${chatId}/polls`,{method:'POST',body:JSON.stringify({question:question.value,options:[...fields.children].map(x=>x.value).filter(x=>x.trim()),multiple:multiple.checked})});toolsDialog.close();});question.focus();
+}
+const pollButton=el('button','icon-button');pollButton.type='button';pollButton.setAttribute('aria-label','Create poll');pollButton.title='Create poll';
+pollButton.innerHTML='<svg viewBox="0 0 24 24"><path d="M5 20V10h3v10M11 20V4h3v16M17 20v-7h3v7"/></svg>';
+pollButton.addEventListener('click',createPoll);$('attach-button').after(pollButton);
+
+let appLocked=false;
+const lockScreen=el('section','lock-screen');lockScreen.hidden=true;lockScreen.id='lock-screen';
+const lockForm=el('form','lock-form'),lockPassword=el('input'),lockError=el('p','lock-error'),unlockButton=el('button','primary','Unlock');
+lockPassword.type='password';lockPassword.autocomplete='current-password';lockPassword.maxLength=128;lockPassword.required=true;lockPassword.setAttribute('aria-label','Unlock password');lockPassword.placeholder='Enter your account password';unlockButton.type='submit';lockError.setAttribute('role','alert');
+const lockSymbol=el('div','lock-symbol');lockSymbol.innerHTML='<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>';
+lockForm.append(lockSymbol,el('h1','','App locked'),el('p','','Enter your account password to unlock your chats.'),lockPassword,lockError,unlockButton);lockScreen.append(lockForm);document.body.append(lockScreen);
+function showLock(){
+  appLocked=true;openGeneration++;socket?.disconnect();if(recorder)stopRecording(true);
+  for(const dialog of document.querySelectorAll('dialog[open]'))dialog.close();
+  me=null;chats.clear();messages=[];activeId=null;contacts=[];drafts.clear();typers.clear();reply=null;attachment=null;
+  for(const id of ['messages','chat-list','account-info'])$(id).replaceChildren();
+  $('message-input').value='';$('chat-title').textContent='';$('active-chat').hidden=true;$('empty-chat').hidden=false;$('app').classList.remove('chat-open');
+  $('app').hidden=true;$('auth-screen').hidden=true;lockScreen.hidden=false;lockPassword.value='';lockError.textContent='';lockPassword.focus();
+}
+lockForm.addEventListener('submit',async(event)=>{event.preventDefault();unlockButton.disabled=true;try{const result=await api('/api/unlock',{method:'POST',body:JSON.stringify({password:lockPassword.value})});appLocked=false;lockScreen.hidden=true;lockPassword.value='';await start(result.user);}catch(e){lockError.textContent=e.message;lockPassword.select();}finally{unlockButton.disabled=false;}});
+const unlockedAccount=showAccount;showAccount=function(){unlockedAccount();toolButton($('account-info'),'Lock app',async()=>{await api('/api/lock',{method:'POST',body:'{}'});showLock();});};
+// Match the rest of the outline icon set, rather than using a text glyph.
+groupTools.textContent='';groupTools.innerHTML='<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 14a5 5 0 0 1 3 4v2"/></svg>';

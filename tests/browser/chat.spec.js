@@ -434,3 +434,17 @@ test("group owner can rename, add and remove members; removed client loses the c
   await bc.close();
   await cc.close();
 });
+
+test('real poll voting syncs between clients and app lock survives refresh and wrong passwords',async({browser})=>{
+ const ac=await browser.newContext(),bc=await browser.newContext();const a=await ac.newPage(),b=await bc.newPage(),id=stamp();
+ await register(a,'Poll maker','pollmaker_'+id);await register(b,'Voter','voter_'+id);await direct(a,'Voter');
+ await a.getByRole('button',{name:'Create poll',exact:true}).click();await a.getByLabel('Poll question',{exact:true}).fill('Where should we meet?');await a.getByLabel('Poll option 1',{exact:true}).fill('The coffee shop');await a.getByLabel('Poll option 2',{exact:true}).fill('By the lake');await a.getByRole('button',{name:'Send poll',exact:true}).click();
+ await openFromList(b,'Poll maker');await b.getByRole('button',{name:'Vote for By the lake',exact:true}).click();await expect(a.locator('.poll-count').last()).toHaveText('1');await expect(b.getByRole('button',{name:'Vote for By the lake',exact:true})).toHaveAttribute('aria-pressed','true');
+ await b.reload();await expect(b.locator('#connection-status')).toHaveText('Connected');await openFromList(b,'Poll maker');await expect(b.getByRole('button',{name:'Vote for By the lake',exact:true})).toHaveAttribute('aria-pressed','true');
+ await a.screenshot({path:'/downloads/chat-evidence/poll-desktop.png'});
+ await a.getByRole('button',{name:'Account and sign out',exact:true}).click();await a.getByRole('button',{name:'Lock app',exact:true}).click();await expect(a.locator('#lock-screen')).toBeVisible();await expect(a.locator('#messages')).toBeEmpty();await a.reload();await expect(a.locator('#lock-screen')).toBeVisible();
+ await a.getByLabel('Unlock password').fill('wrong password');await a.getByRole('button',{name:'Unlock',exact:true}).click();await expect(a.locator('.lock-error')).toHaveText('Password is incorrect.');await expect(a.locator('#app')).not.toBeVisible();
+ await a.screenshot({path:'/downloads/chat-evidence/app-lock.png'});
+ await a.getByLabel('Unlock password').fill('Browser-test-password-123');await a.getByRole('button',{name:'Unlock',exact:true}).click();await expect(a.locator('#connection-status')).toHaveText('Connected');await expect(a.locator('#app')).toBeVisible();await openFromList(a,'Voter');await expect(a.locator('.poll-count').last()).toHaveText('1');
+ await ac.close();await bc.close();
+});
