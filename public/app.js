@@ -762,8 +762,10 @@ function openMediaViewer(message, source = messages) {
     const stage = el("div", "media-stage"),
       media = el(a.mime.startsWith("video/") ? "video" : "img");
     media.src = "/api/attachments/" + a.id;
-    if (media.tagName === "VIDEO") media.controls = true;
-    else {
+    if (media.tagName === "VIDEO") {
+      media.controls = true;
+      zoomIn.disabled = true;
+    } else {
       media.alt = a.filename;
       media.tabIndex = 0;
       media.setAttribute("aria-label", "Zoom media");
@@ -842,6 +844,8 @@ function openMediaViewer(message, source = messages) {
     if (dialog.open) dialog.focus({ preventScroll: true });
   }
   dialog.addEventListener("keydown", (e) => {
+    // Keep native video controls' seek/volume keys instead of changing media.
+    if (e.target.tagName === "VIDEO") return;
     if (
       (e.key === "ArrowRight" && index < list.length - 1) ||
       (e.key === "ArrowLeft" && index > 0)
@@ -2101,12 +2105,6 @@ galleryButton.addEventListener("click", async () => {
           toolsDialog.close();
           openMediaViewer(m, result.messages);
         });
-      if (/^(image|video)\//.test(a.mime))
-        link.addEventListener("click", (e) => {
-          e.preventDefault();
-          toolsDialog.close();
-          openMediaViewer(m, result.messages);
-        });
       else {
         link.target = "_blank";
         link.rel = "noopener";
@@ -3183,13 +3181,21 @@ showMessageMenu = function (message, point) {
     b.replaceChildren(icon, el("span", "", visual));
   }
   if (point) {
+    const bounds = toolsDialog.getBoundingClientRect();
     toolsDialog.style.left =
-      Math.max(8, Math.min(point.x, innerWidth - 170)) + "px";
+      Math.max(8, Math.min(point.x, innerWidth - bounds.width - 8)) + "px";
+    const compact = innerHeight <= 480;
     toolsDialog.style.top =
       Math.max(
-        54,
-        Math.min(point.y, innerHeight - toolsDialog.scrollHeight - 12),
+        compact ? 8 : 54,
+        Math.min(point.y, innerHeight - bounds.height - 8),
       ) + "px";
+    const reactions = toolsDialog.querySelector(".reaction-picker");
+    if (reactions && !compact) {
+      const r = reactions.getBoundingClientRect();
+      const shift = Math.max(8 - r.left, Math.min(0, innerWidth - 8 - r.right));
+      reactions.style.transform = `translateX(${shift}px)`;
+    }
   }
 };
 function showMainMenu() {

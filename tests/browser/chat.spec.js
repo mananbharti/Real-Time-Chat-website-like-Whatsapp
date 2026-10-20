@@ -717,7 +717,7 @@ test("media preview/viewer and persistent chat preferences change actual compose
 
 test("edge menus remain on-screen and gallery videos preserve native keyboard controls", async ({
   browser,
-}) => {
+}, testInfo) => {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
   });
