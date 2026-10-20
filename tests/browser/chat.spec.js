@@ -460,7 +460,7 @@ test("group owner can rename, add and remove members; removed client loses the c
   await expect(c.locator("#active-chat")).not.toBeVisible();
   await a.getByRole("button", { name: "Account and sign out" }).click();
   await a.getByRole("button", { name: "Edit profile", exact: true }).click();
-  bounds = await a.locator("#tools-dialog").boundingBox();
+  let bounds = await a.locator("#tools-dialog").boundingBox();
   expect(bounds.x).toBe(65);
   expect(bounds.width).toBe(511);
   expect(bounds.height).toBe(713);
