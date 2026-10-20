@@ -2208,7 +2208,7 @@ showTools = function(title, point) {
   if (!point && $("account-dialog").open && ["Edit profile", "Account", "Privacy", "Chats", "Keyboard shortcuts", "About"].includes(title)) {
     panel.classList.add("settings-subpage");
     const header = panel.querySelector("header"), back = header.querySelector("button");
-    back.textContent = "←"; back.title = "Back to settings"; header.prepend(back);
+    back.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 5-7 7 7 7M5 12h15"/></svg>'; back.title = "Back to settings"; header.prepend(back);
   }
   return panel;
 };
