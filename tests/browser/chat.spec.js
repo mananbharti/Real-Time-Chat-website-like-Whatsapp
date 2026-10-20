@@ -354,3 +354,83 @@ test("double-click, mobile swipe and long-press operate on real messages", async
   await ac.close();
   await bc.close();
 });
+
+test("message reactions toggle across clients and sender edits update the actual stored message", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext(),
+    bc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage(),
+    id = stamp();
+  await register(a, "Harper", "harper_" + id);
+  await register(b, "Drew", "drew_" + id);
+  await direct(a, "Drew");
+  await send(a, "Before correction");
+  await openFromList(b, "Harper");
+  await b
+    .locator(".message")
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  await b.getByRole("button", { name: "React 👍", exact: true }).click();
+  await expect(a.locator(".reaction-pill")).toHaveText("👍");
+  await a
+    .locator(".message")
+    .getByRole("button", { name: "Message actions" })
+    .click();
+  await a.getByRole("button", { name: "Edit message", exact: true }).click();
+  await a.getByLabel("Edit message text").fill("After correction");
+  await a.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(b.locator(".message-text")).toHaveText("After correction");
+  await expect(b.locator(".edited-label")).toHaveText("Edited");
+  await b.locator(".reaction-pill").click();
+  await expect(a.locator(".reaction-pill")).toHaveCount(0);
+  await b.reload();
+  await expect(b.locator("#connection-status")).toHaveText("Connected");
+  await openFromList(b, "Harper");
+  await expect(b.locator(".message-text")).toHaveText("After correction");
+  await ac.close();
+  await bc.close();
+});
+
+test("group owner can rename, add and remove members; removed client loses the conversation", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext(),
+    bc = await browser.newContext(),
+    cc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage(),
+    c = await cc.newPage(),
+    id = stamp();
+  await register(a, "Owner", "owner_" + id);
+  await register(b, "Member", "member_" + id);
+  await register(c, "Added", "added_" + id);
+  await a.getByRole("button", { name: "New chat", exact: true }).click();
+  await a.getByRole("button", { name: "New group", exact: true }).click();
+  await a.getByLabel("Group name", { exact: true }).fill("Managed");
+  await a.locator(".contact").filter({ hasText: "Member" }).click();
+  await a.getByRole("button", { name: "Create group", exact: true }).click();
+  // The management control is also available after selecting a group from the chat list.
+  await openFromList(a, "Managed");
+  await a.getByRole("button", { name: "Manage group", exact: true }).click();
+  await a.getByRole("button", { name: "Rename group", exact: true }).click();
+  await a.getByLabel("New group name").fill("Managed updated");
+  await a.getByRole("button", { name: "Save group name", exact: true }).click();
+  await expect(a.locator("#chat-title")).toHaveText("Managed updated");
+  await a.getByRole("button", { name: "Manage group", exact: true }).click();
+  await a.getByRole("button", { name: "Add member", exact: true }).click();
+  await a
+    .locator("#tools-dialog")
+    .getByRole("button", { name: new RegExp("Added @added_") })
+    .click();
+  await openFromList(c, "Managed updated");
+  await a.getByRole("button", { name: "Manage group", exact: true }).click();
+  a.once("dialog", (d) => d.accept());
+  await a.getByRole("button", { name: "Remove Added", exact: true }).click();
+  await expect(c.locator(".chat-item")).toHaveCount(0);
+  await expect(c.locator("#active-chat")).not.toBeVisible();
+  await ac.close();
+  await bc.close();
+  await cc.close();
+});

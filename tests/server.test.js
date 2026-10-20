@@ -458,3 +458,159 @@ test("full-history search is member-only and ignores hidden/deleted messages", a
     0,
   );
 });
+test("message edits and reactions are real, persistent and membership-checked", async () => {
+  const a = await connect(alice);
+  const m = (await send(a, chat.id, "Before edit")).message;
+  assert.equal(
+    (
+      await request(`/api/messages/${m.id}`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { text: "spoof" },
+      })
+    ).status,
+    403,
+  );
+  const edited = await request(`/api/messages/${m.id}`, {
+    cookie: alice.cookie,
+    method: "PATCH",
+    body: { text: "After edit" },
+  });
+  assert.equal(edited.data.message.text, "After edit");
+  assert.ok(edited.data.message.editedAt);
+  assert.equal(
+    (
+      await request(`/api/messages/${m.id}/reaction`, {
+        cookie: eve.cookie,
+        method: "PUT",
+        body: { emoji: "👍" },
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await request(`/api/messages/${m.id}/reaction`, {
+        cookie: bob.cookie,
+        method: "PUT",
+        body: { emoji: "👍" },
+      })
+    ).status,
+    200,
+  );
+  let history = (
+    await request(`/api/chats/${chat.id}/messages`, { cookie: alice.cookie })
+  ).data.messages;
+  assert.equal(history.find((x) => x.id === m.id).reactions[0].emoji, "👍");
+  await request(`/api/messages/${m.id}/reaction`, {
+    cookie: bob.cookie,
+    method: "PUT",
+    body: { emoji: "" },
+  });
+  history = (
+    await request(`/api/chats/${chat.id}/messages`, { cookie: alice.cookie })
+  ).data.messages;
+  assert.equal(history.find((x) => x.id === m.id).reactions.length, 0);
+  server.db
+    .prepare("UPDATE messages SET created_at=? WHERE id=?")
+    .run("2020-01-01T00:00:00.000Z", m.id);
+  assert.equal(
+    (
+      await request(`/api/messages/${m.id}`, {
+        cookie: alice.cookie,
+        method: "PATCH",
+        body: { text: "too late" },
+      })
+    ).status,
+    400,
+  );
+});
+test("group ownership protects member changes and removal immediately revokes history access", async () => {
+  const created = (
+    await request("/api/chats", {
+      cookie: alice.cookie,
+      method: "POST",
+      body: { kind: "group", name: "Managed group", members: [bob.id] },
+    })
+  ).data.chat;
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/group`, {
+        cookie: bob.cookie,
+        method: "PATCH",
+        body: { name: "Not allowed" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/group`, {
+        cookie: alice.cookie,
+        method: "PATCH",
+        body: { name: "Updated group" },
+      })
+    ).data.chat.name,
+    "Updated group",
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/members`, {
+        cookie: bob.cookie,
+        method: "POST",
+        body: { userId: eve.id },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/members`, {
+        cookie: alice.cookie,
+        method: "POST",
+        body: { userId: eve.id },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/members/${eve.id}`, {
+        cookie: bob.cookie,
+        method: "DELETE",
+        body: {},
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/members/${eve.id}`, {
+        cookie: alice.cookie,
+        method: "DELETE",
+        body: {},
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await request(`/api/chats/${created.id}/messages`, { cookie: eve.cookie }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await request(`/api/chats/${created.id}/members/${alice.id}`, {
+        cookie: alice.cookie,
+        method: "DELETE",
+        body: {},
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    server.db.prepare("SELECT owner_id FROM chats WHERE id=?").get(created.id)
+      .owner_id,
+    bob.id,
+  );
+});

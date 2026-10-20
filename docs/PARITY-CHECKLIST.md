@@ -7,6 +7,7 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 - Signup/login, persistent sessions, direct/group messages and authorization.
 - Delivery/read acknowledgements, unread counts and receipt details.
 - Replies, forwarding, stars and deletion rules.
+- Persistent message edits/reactions and group-owner member management.
 - Images, recorded voice-note playback and protected attachments.
 - Pin/mute/archive, mobile navigation and server restart recovery.
 - Per-chat draft recovery, links, full-history search and keyboard shortcuts.
@@ -25,8 +26,8 @@ This is a tracking document, not a claim that every WhatsApp feature is implemen
 
 - Calls, end-to-end encryption, phone/SMS login and account recovery.
 - Photo/video stories, status view receipts and story progress controls.
-- Message reactions/edits, stickers, polls and location sharing.
-- Group membership/admin controls and invitation flows.
+- Stickers, polls and location sharing.
+- Multiple-admin roles, group invitation links and richer group permissions.
 - Blocking/reporting, disappearing messages, scheduled messages or multi-device draft sync.
 - Downloaded webpage metadata/thumbnails for rich link previews.
 - Exhaustive authenticated WhatsApp screen/state parity.

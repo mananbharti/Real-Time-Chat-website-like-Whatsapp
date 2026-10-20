@@ -48,6 +48,7 @@ function createChatServer(options = {}) {
     );
   for (const [column, definition] of [
     ["deleted_at", "TEXT"],
+    ["edited_at", "TEXT"],
     ["forwarded", "INTEGER NOT NULL DEFAULT 0"],
   ]) {
     if (
@@ -82,6 +83,9 @@ function createChatServer(options = {}) {
         .some((c) => c.name === column)
     )
       db.exec(`ALTER TABLE users ADD COLUMN ${column} TEXT`);
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS reactions(message_id TEXT NOT NULL REFERENCES messages(id),user_id TEXT NOT NULL REFERENCES users(id),emoji TEXT NOT NULL,PRIMARY KEY(message_id,user_id))",
+  );
   const app = express();
   if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
   const http = createServer(app);
@@ -283,6 +287,14 @@ function createChatServer(options = {}) {
       : null;
     return {
       deletedAt: row.deleted_at,
+      editedAt: row.edited_at,
+      reactions: row.deleted_at
+        ? []
+        : db
+            .prepare(
+              "SELECT r.user_id AS userId,r.emoji,u.name FROM reactions r JOIN users u ON u.id=r.user_id WHERE r.message_id=?",
+            )
+            .all(row.id),
       forwarded: !!row.forwarded,
       id: row.id,
       seq: row.seq,
@@ -826,6 +838,155 @@ function createChatServer(options = {}) {
       .all(req.params.id, req.user.id, q, q)
       .map(messageRow);
     res.json({ messages: results });
+  });
+
+  function broadcastMessage(id) {
+    const row = db.prepare("SELECT * FROM messages WHERE id=?").get(id);
+    for (const u of db
+      .prepare("SELECT user_id FROM members WHERE chat_id=?")
+      .all(row.chat_id))
+      io.to(userRoom(u.user_id)).emit("message:changed", {
+        chatId: row.chat_id,
+        message: messageRow(row),
+      });
+    notifyChat(row.chat_id);
+  }
+  app.patch("/api/messages/:id", auth, (req, res) => {
+    const m = ownMessage(req, res);
+    if (!m) return;
+    if (m.sender_id !== req.user.id)
+      return fail(res, 403, "Only the sender can edit this message.");
+    if (m.deleted_at)
+      return fail(res, 400, "Deleted messages cannot be edited.");
+    if (Date.now() - Date.parse(m.created_at) > 15 * 60000)
+      return fail(
+        res,
+        400,
+        "Messages can be edited for 15 minutes after sending.",
+      );
+    const text = req.body?.text;
+    if (typeof text !== "string" || !text.trim() || text.trim().length > 4000)
+      return fail(res, 400, "Use 1-4000 characters.");
+    if (!allowed(`edit:${req.user.id}`, 30, 60000))
+      return fail(res, 429, "Too many edits. Try again shortly.");
+    db.prepare("UPDATE messages SET text=?,edited_at=? WHERE id=?").run(
+      text.trim(),
+      new Date().toISOString(),
+      m.id,
+    );
+    broadcastMessage(m.id);
+    res.json({
+      message: messageRow(
+        db.prepare("SELECT * FROM messages WHERE id=?").get(m.id),
+      ),
+    });
+  });
+  app.put("/api/messages/:id/reaction", auth, (req, res) => {
+    const m = ownMessage(req, res);
+    if (!m) return;
+    if (m.deleted_at)
+      return fail(res, 400, "Deleted messages cannot have reactions.");
+    const emoji = req.body?.emoji;
+    if (
+      typeof emoji !== "string" ||
+      ![
+        "",
+        "👍",
+        "❤️",
+        "😂",
+        "😮",
+        "😢",
+        "🙏",
+        "🔥",
+        "🎉",
+        "👎",
+        "✅",
+      ].includes(emoji)
+    )
+      return fail(res, 400, "Choose a supported reaction.");
+    if (!allowed(`react:${req.user.id}`, 60, 60000))
+      return fail(res, 429, "Too many reactions. Wait a moment.");
+    if (emoji)
+      db.prepare(
+        "INSERT INTO reactions(message_id,user_id,emoji) VALUES(?,?,?) ON CONFLICT(message_id,user_id) DO UPDATE SET emoji=excluded.emoji",
+      ).run(m.id, req.user.id, emoji);
+    else
+      db.prepare("DELETE FROM reactions WHERE message_id=? AND user_id=?").run(
+        m.id,
+        req.user.id,
+      );
+    broadcastMessage(m.id);
+    res.json({ ok: true });
+  });
+
+  app.patch("/api/chats/:id/group", auth, (req, res) => {
+    const chat = db
+      .prepare("SELECT * FROM chats WHERE id=?")
+      .get(req.params.id);
+    if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id))
+      return fail(res, 404, "Group not found.");
+    if (chat.owner_id !== req.user.id)
+      return fail(res, 403, "Only the group owner can change this group.");
+    const name = req.body?.name;
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 60)
+      return fail(res, 400, "Use a group name of 1-60 characters.");
+    db.prepare("UPDATE chats SET name=? WHERE id=?").run(name.trim(), chat.id);
+    notifyChat(chat.id);
+    res.json({ chat: chatView(chat.id, req.user.id) });
+  });
+  app.post("/api/chats/:id/members", auth, (req, res) => {
+    const chat = db
+      .prepare("SELECT * FROM chats WHERE id=?")
+      .get(req.params.id);
+    if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id))
+      return fail(res, 404, "Group not found.");
+    if (chat.owner_id !== req.user.id)
+      return fail(res, 403, "Only the group owner can add members.");
+    const id = req.body?.userId;
+    if (
+      typeof id !== "string" ||
+      !db.prepare("SELECT id FROM users WHERE id=?").get(id)
+    )
+      return fail(res, 400, "Choose a registered account.");
+    if (
+      db
+        .prepare("SELECT count(*) AS n FROM members WHERE chat_id=?")
+        .get(chat.id).n >= 50
+    )
+      return fail(res, 400, "Groups support up to 50 members.");
+    db.prepare(
+      "INSERT OR IGNORE INTO members(chat_id,user_id) VALUES(?,?)",
+    ).run(chat.id, id);
+    notifyChat(chat.id);
+    res.json({ ok: true });
+  });
+  app.delete("/api/chats/:id/members/:userId", auth, (req, res) => {
+    const chat = db
+        .prepare("SELECT * FROM chats WHERE id=?")
+        .get(req.params.id),
+      target = req.params.userId;
+    if (!chat || chat.kind !== "group" || !member(chat.id, req.user.id))
+      return fail(res, 404, "Group not found.");
+    if (chat.owner_id !== req.user.id && target !== req.user.id)
+      return fail(res, 403, "Only the owner can remove other members.");
+    if (!member(chat.id, target)) return fail(res, 404, "Member not found.");
+    const remaining = db
+      .prepare(
+        "SELECT user_id FROM members WHERE chat_id=? AND user_id<>? ORDER BY user_id",
+      )
+      .all(chat.id, target);
+    if (target === chat.owner_id && remaining.length)
+      db.prepare("UPDATE chats SET owner_id=? WHERE id=?").run(
+        remaining[0].user_id,
+        chat.id,
+      );
+    db.prepare("DELETE FROM members WHERE chat_id=? AND user_id=?").run(
+      chat.id,
+      target,
+    );
+    io.to(userRoom(target)).emit("chat:removed", { chatId: chat.id });
+    if (remaining.length) notifyChat(chat.id);
+    res.json({ ok: true });
   });
 
   function authorized(socket, chat) {

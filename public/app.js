@@ -380,10 +380,36 @@ function buildMessage(m) {
     time = el("time", "", clock(m.createdAt));
   time.dateTime = m.createdAt;
   time.title = new Date(m.createdAt).toLocaleString();
+  if (m.editedAt) meta.append(el("span", "edited-label", "Edited"));
   meta.append(time);
   if (m.starred) meta.prepend(el("span", "star-indicator", "★"));
   if (mine) meta.append(ticks(m, c));
   li.append(meta);
+  if (!m.deletedAt && m.reactions?.length) {
+    const counts = new Map();
+    for (const r of m.reactions)
+      counts.set(r.emoji, (counts.get(r.emoji) || 0) + 1);
+    const bar = el("div", "message-reactions");
+    for (const [emoji, count] of counts) {
+      const b = el(
+        "button",
+        "reaction-pill" +
+          (m.reactions.some((r) => r.userId === me.id && r.emoji === emoji)
+            ? " own-reaction"
+            : ""),
+        emoji + (count > 1 ? " " + count : ""),
+      );
+      b.type = "button";
+      b.setAttribute("aria-label", "Reaction " + emoji + ", " + count);
+      b.title = m.reactions
+        .filter((r) => r.emoji === emoji)
+        .map((r) => r.name)
+        .join(", ");
+      b.addEventListener("click", () => reactTo(m, emoji));
+      bar.append(b);
+    }
+    li.append(bar);
+  }
   const replyButton = el("button", "message-action", "↩");
   replyButton.type = "button";
   replyButton.setAttribute("aria-label", "Reply to message");
@@ -392,7 +418,10 @@ function buildMessage(m) {
   const menuButton = el("button", "message-menu-button", "⌄");
   menuButton.type = "button";
   menuButton.setAttribute("aria-label", "Message actions");
-  menuButton.addEventListener("click", () => showMessageMenu(m));
+  menuButton.addEventListener("click", (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    showMessageMenu(m, { x: r.left - 230, y: r.bottom + 4 });
+  });
   li.append(menuButton);
   li.addEventListener("contextmenu", (e) => {
     e.preventDefault();
@@ -499,6 +528,8 @@ async function openChat(id) {
   $("message-search").value = "";
   subtitle();
   renderChats();
+  if (typeof groupTools !== "undefined")
+    groupTools.hidden = active()?.kind !== "group";
   updateComposer();
   try {
     const result = await api(`/api/chats/${id}/messages`);
@@ -567,6 +598,7 @@ async function start(user) {
     chats.set(chat.id, chat);
     renderChats();
     if (chat.id === activeId) {
+      $("chat-title").textContent = chat.name;
       subtitle();
       updateTicks();
     }
@@ -598,6 +630,20 @@ async function start(user) {
       )
         new Notification(m.senderName, { body: preview(m), tag: m.chatId });
     }
+  });
+  socket.on("chat:removed", ({ chatId }) => {
+    chats.delete(chatId);
+    if (activeId === chatId) {
+      activeId = null;
+      messages = [];
+      $("messages").replaceChildren();
+      $("active-chat").hidden = true;
+      $("empty-chat").hidden = false;
+      $("app").classList.remove("chat-open");
+      updateComposer();
+      toast("You are no longer a member of this group.");
+    }
+    renderChats();
   });
   socket.on("message:changed", ({ chatId, message }) => {
     if (chatId === activeId) {
@@ -1237,6 +1283,23 @@ function showChatMenu(chat, point) {
 function showMessageMenu(m, point) {
   const box = showTools("Message", point);
   if (!m.deletedAt) {
+    const reactions = el("div", "reaction-picker");
+    for (const emoji of ["👍", "❤️", "😂", "😮", "😢", "🙏"]) {
+      const button = el("button", "", emoji);
+      button.type = "button";
+      button.setAttribute("aria-label", "React " + emoji);
+      button.addEventListener("click", async () => {
+        await reactTo(m, emoji);
+        toolsDialog.close();
+      });
+      reactions.append(button);
+    }
+    box.append(reactions);
+    if (
+      m.senderId === me.id &&
+      Date.now() - Date.parse(m.createdAt) < 15 * 60000
+    )
+      toolButton(box, "Edit message", () => editMessage(m));
     if (m.text)
       toolButton(box, "Copy text", async () => {
         await navigator.clipboard.writeText(m.text);
@@ -1834,3 +1897,130 @@ window.addEventListener("beforeunload", () => {
   persistDrafts();
   if (recorder) stopRecording(true);
 });
+async function reactTo(message, emoji) {
+  try {
+    const current = message.reactions?.find((r) => r.userId === me.id)?.emoji;
+    await api(`/api/messages/${message.id}/reaction`, {
+      method: "PUT",
+      body: JSON.stringify({ emoji: current === emoji ? "" : emoji }),
+    });
+  } catch (e) {
+    toast(e.message);
+  }
+}
+function editMessage(message) {
+  const box = showTools("Edit message"),
+    input = el("textarea", "status-input");
+  input.value = message.text;
+  input.maxLength = 4000;
+  input.setAttribute("aria-label", "Edit message text");
+  box.append(input);
+  toolButton(box, "Save changes", async () => {
+    await api(`/api/messages/${message.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text: input.value }),
+    });
+    toolsDialog.close();
+  });
+  input.focus();
+}
+const groupTools = el("button", "icon-button", "♧");
+groupTools.type = "button";
+groupTools.setAttribute("aria-label", "Manage group");
+groupTools.title = "Manage group";
+groupTools.addEventListener("click", () => {
+  const chat = active();
+  if (chat?.kind !== "group") {
+    toast("Group management is available in group conversations.");
+    return;
+  }
+  const box = showTools("Group settings");
+  box.append(
+    el("p", "info-note", chat.name + " · " + chat.members.length + " members"),
+  );
+  if (chat.ownerId === me.id) {
+    toolButton(box, "Rename group", () => {
+      const form = showTools("Rename group"),
+        input = el("input");
+      input.value = chat.name;
+      input.maxLength = 60;
+      input.setAttribute("aria-label", "New group name");
+      form.append(input);
+      toolButton(form, "Save group name", async () => {
+        await api(`/api/chats/${chat.id}/group`, {
+          method: "PATCH",
+          body: JSON.stringify({ name: input.value }),
+        });
+        toolsDialog.close();
+      });
+    });
+    toolButton(box, "Add member", async () => {
+      const result = await api("/api/users"),
+        list = showTools("Add member");
+      list.append(
+        el(
+          "p",
+          "info-note",
+          "New members can see the entire existing group history.",
+        ),
+      );
+      for (const user of result.users.filter(
+        (u) => !chat.members.some((m) => m.id === u.id),
+      ))
+        toolButton(list, user.name + " @" + user.handle, async () => {
+          await api(`/api/chats/${chat.id}/members`, {
+            method: "POST",
+            body: JSON.stringify({ userId: user.id }),
+          });
+          toolsDialog.close();
+        });
+    });
+  }
+  for (const user of chat.members) {
+    const row = el("div", "info-member");
+    row.append(
+      userAvatar(user),
+      el("span", "", user.name + (user.id === chat.ownerId ? " · owner" : "")),
+    );
+    if (chat.ownerId === me.id && user.id !== me.id) {
+      const button = el("button", "remove-member", "Remove");
+      button.type = "button";
+      button.setAttribute("aria-label", "Remove " + user.name);
+      button.addEventListener("click", async () => {
+        if (confirm("Remove " + user.name + " from this group?")) {
+          await api(`/api/chats/${chat.id}/members/${user.id}`, {
+            method: "DELETE",
+            body: "{}",
+          });
+          toolsDialog.close();
+        }
+      });
+      row.append(button);
+    }
+    box.append(row);
+  }
+  toolButton(
+    box,
+    "Leave group",
+    async () => {
+      if (
+        !confirm(
+          "Leave this group? You will lose access to its messages and media.",
+        )
+      )
+        return;
+      await api(`/api/chats/${chat.id}/members/${me.id}`, {
+        method: "DELETE",
+        body: "{}",
+      });
+      toolsDialog.close();
+    },
+    true,
+  );
+});
+document.querySelector(".chat-header").insertBefore(groupTools, optionsButton);
+const showGroupButton = () => {
+  groupTools.hidden = active()?.kind !== "group";
+};
+$("chat-list").addEventListener("click", showGroupButton);
+groupTools.hidden = true;

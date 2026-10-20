@@ -43,6 +43,8 @@ To try both sides of a conversation, open a second browser profile or an incogni
 | Full-history search        | Shared-media gallery                 | Profile pictures and about lines  |
 | Membership-checked access  | Idempotent message retries           | Text statuses with 24-hour expiry |
 
+Messages also support emoji reactions and sender edits within 15 minutes. Group owners can rename groups, add/remove members and leave, with ownership passed to a remaining member. Removed members immediately lose access.
+
 **The ticks are real.** One tick means the server stored a message. Gray double ticks mean every other member's client acknowledged delivery. Blue double ticks mean every other member acknowledged reading. Message info shows the recorded delivery/read times.
 
 **The recorder is real.** Voice notes use the browser microphone, show a live waveform, can be previewed before sending, and play on the receiving client. Microphone access requires HTTPS or localhost.
@@ -120,7 +122,7 @@ Double-click a message or swipe right to reply. Right-click or touch-and-hold fo
 
 ## Project status
 
-This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, group-admin controls, blocking/reporting, reactions, stickers, polls, message edits and photo/video stories are not implemented. Statuses are text-only. Link cards show the URL host/path, not fetched thumbnails or page metadata.
+This is a tested development build, not a claim of exhaustive WhatsApp parity or a production security certification. Calls, end-to-end encryption, phone/SMS login, password recovery, closed-app push notifications, multiple-admin roles and group invitation links, blocking/reporting, stickers, polls and photo/video stories are not implemented. Statuses are text-only. Link cards show the URL host/path, not fetched thumbnails or page metadata.
 
 Messages and media are readable by the server operator. The app needs HTTPS, registration/abuse policies, storage limits, retention/backup plans and a security review before public deployment. Use a single server process unless you add a shared Socket.IO adapter and storage. Real-device testing is still needed beyond Chrome's mobile viewport tests.
 

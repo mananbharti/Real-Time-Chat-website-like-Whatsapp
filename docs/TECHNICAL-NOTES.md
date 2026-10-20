@@ -67,7 +67,7 @@ Tests exercise authentication, direct/group membership, real socket delivery, re
 
 ## Limits and deployment notes
 
-This is a working development build, **not an exhaustive reverse-engineered WhatsApp implementation or a production-security certification**. Calls, end-to-end encryption, phone-number login/SMS, account recovery, push notifications when the app is closed, group member/admin management, blocking/reporting, message edits, polls, reactions, stickers, location sharing and photo/video statuses are not implemented. Contacts are registered app accounts, not your phone address book. Long-press/swipe behavior and recording need real-device regression testing beyond desktop Chrome's mobile viewport tests.
+This is a working development build, **not an exhaustive reverse-engineered WhatsApp implementation or a production-security certification**. Calls, end-to-end encryption, phone-number login/SMS, account recovery, push notifications when the app is closed, multiple-admin roles and invitation links, blocking/reporting, polls, stickers, location sharing and photo/video statuses are not implemented. Contacts are registered app accounts, not your phone address book. Long-press/swipe behavior and recording need real-device regression testing beyond desktop Chrome's mobile viewport tests.
 
 Use a single Node process: online presence and basic rate-limit buckets are in memory. A multi-instance deployment needs a shared Socket.IO adapter, shared limits and shared storage. Sessions/messages/media persist across restarts; presence does not. Passwords are hashed, but message/media contents are stored unencrypted on the server. Authorized server operators can read them.
 
