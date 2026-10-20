@@ -1197,6 +1197,7 @@ function showAccount() {
   );
   theme.addEventListener("click", () => {
     toggleTheme();
+    if (toolsDialog.open) toolsDialog.close();
     $("account-dialog").close();
   });
   $("account-info").append(theme);
@@ -1547,12 +1548,22 @@ showAccount = function () {
     about.value = me.about || "";
     about.maxLength = 140;
     about.setAttribute("aria-label", "About");
-    form.append(
-      el("label", "", "Display name"),
-      name,
-      el("label", "", "About"),
-      about,
-    );
+    form.classList.add("profile-editor");
+    const portrait = userAvatar(me);
+    portrait.classList.add("profile-editor-avatar");
+    form.append(portrait);
+    form.append(el("label", "profile-about-label", "About"), about,
+      el("p", "profile-about-duration", "Until I change it"),
+      el("label", "profile-name-label", "Name"), name,
+      el("label", "profile-handle-label", "Username"),
+      el("p", "profile-editor-handle", "@" + me.handle));
+    for (const [field, label, cls] of [[about, "Edit about", "edit-about"], [name, "Edit name", "edit-name"]]) {
+      const pencil = el("button", "profile-field-edit icon-button " + cls);
+      pencil.type = "button"; pencil.setAttribute("aria-label", label);
+      pencil.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 4 4 4L7 21H3v-4L16 4Z"/></svg>';
+      pencil.addEventListener("click", () => { field.focus(); field.select(); });
+      form.append(pencil);
+    }
     toolButton(form, "Save profile", async () => {
       const result = await api("/api/profile", {
         method: "PATCH",
@@ -2189,3 +2200,16 @@ $('message-search').placeholder='Search';
 const jumpToDate=el('button','jump-to-date icon-button');jumpToDate.type='button';jumpToDate.setAttribute('aria-label','Jump to date');jumpToDate.title='Jump to date is not implemented';jumpToDate.innerHTML='<svg viewBox="0 0 24 24"><rect x="3" y="5" width="16" height="15" rx="2"/><path d="M7 3v4M15 3v4M3 10h16"/><circle cx="17" cy="17" r="4"/><path d="m20 20 3 3"/></svg>';jumpToDate.addEventListener('click',()=>toast('Jump to date is not yet implemented. Search by message text.'));searchPanel.append(jumpToDate);
 function searchAffordances(){allSearchButton.hidden=!$('message-search').value.trim();$('search-count').hidden=!$('message-search').value.trim();}
 $('search-messages-toggle').addEventListener('click',searchAffordances);$('message-search').addEventListener('input',searchAffordances);
+
+// Settings subpages remain in the same sidebar instead of opening centered dialogs.
+const beforeSettingsDrawer = showTools;
+showTools = function(title, point) {
+  const panel = beforeSettingsDrawer(title, point);
+  panel.classList.remove("settings-subpage", "profile-editor");
+  if (!point && $("account-dialog").open && ["Edit profile", "Account", "Privacy", "Chats", "Keyboard shortcuts", "About"].includes(title)) {
+    panel.classList.add("settings-subpage");
+    const header = panel.querySelector("header"), back = header.querySelector("button");
+    back.textContent = "←"; back.title = "Back to settings"; header.prepend(back);
+  }
+  return panel;
+};

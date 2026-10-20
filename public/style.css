@@ -1708,3 +1708,36 @@ select {
 @media(max-width:999px){.conversation-search-drawer .search-drawer-header h2,.drawer-search-results{display:none}.search-drawer-header{display:contents}.conversation-search-drawer #message-search{min-width:0;flex:1}.info-profile{text-align:center}.info-profile .avatar{margin:auto}.info-action{display:flex;align-items:center;gap:16px}.info-action-icon svg{width:24px;height:24px}.info-action small{display:block}.info-security-note{font-size:12px;line-height:18px}}
 @media(min-width:1000px){.conversation-search-drawer #message-search{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Ccircle cx='10' cy='10' r='6'/%3E%3Cpath d='m15 15 5 5'/%3E%3C/svg%3E");background-position:16px center;background-size:20px;background-repeat:no-repeat}.conversation-search-drawer .jump-to-date{position:absolute;left:10px;top:64px;width:40px;height:40px;color:var(--text)}.search-drawer-hint{margin-top:76px}.conversation-search-drawer #search-count:empty{display:none}.contacts-drawer #group-mode.active{background:none}.info-action{padding-left:28px!important}}
 @media(max-width:999px){.jump-to-date{display:none}.contact-actions .contact-option:disabled{opacity:.5}}
+@media(min-width:1000px){
+ #tools-dialog.settings-subpage{position:fixed;inset:0 auto 0 65px;box-sizing:border-box;width:var(--sidebar);height:100vh;max-width:none;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:var(--panel);color:var(--text);box-shadow:none;overflow-y:auto}
+ #tools-dialog.settings-subpage::backdrop{background:transparent}
+ #tools-dialog.settings-subpage>header{height:64px;box-sizing:border-box;display:flex;justify-content:flex-start;gap:12px;padding:12px 14px;border:0;margin:0}
+ #tools-dialog.settings-subpage>header h2{font-size:16px;font-weight:400;margin:0}
+ #tools-dialog.settings-subpage>header button{font-size:24px;width:32px;height:40px;flex:none}
+ #tools-dialog.settings-subpage>.info-note{margin:20px 30px;color:var(--muted);font-size:14px;line-height:22px}
+ #tools-dialog.settings-subpage>.tool-row{margin:0 20px;width:calc(100% - 40px);padding:20px 10px;min-height:68px;border-radius:0;border-bottom:1px solid var(--border)}
+ #tools-dialog.profile-editor{padding-bottom:22px}
+ .profile-editor-avatar{width:120px;height:120px;min-width:120px;font-size:44px;margin:40px auto 64px;display:flex}
+ #tools-dialog.profile-editor>label{display:block;margin:0 30px 16px;font-size:14px;font-weight:500;color:var(--muted)}
+ #tools-dialog.profile-editor>input{box-sizing:border-box;display:block;width:calc(100% - 60px);margin:0 30px;padding:8px 0;height:40px;background:transparent;border:0;border-bottom:1px solid var(--border);border-radius:0;font:16px Roboto,Arial,sans-serif;color:var(--text)}
+ #tools-dialog.profile-editor>input:focus{outline:none;border-bottom:2px solid var(--green)}
+ .profile-about-duration{margin:22px 30px 54px;color:var(--muted);font-size:14px}
+ #tools-dialog.profile-editor>.profile-handle-label{margin-top:64px}
+ .profile-editor-handle{margin:22px 30px 38px;font-size:16px}
+}
+@media(min-width:1000px){.profile-editor-avatar{justify-content:center;align-items:center;margin-left:calc(50% - 69px)}}
+/* Dark-theme readability corrections. Exact current-reference dark tokens remain unverified. */
+@media(min-width:1000px){
+ body:not(.light) .conversation::before{background:#8696a0;opacity:.09}
+ body:not(.light) .message-meta{color:#ffffff99}
+ body:not(.light) .day-divider span{background:var(--header);color:var(--muted)}
+ body:not(.light) .filters button{border-color:var(--line);color:var(--muted);background:transparent}
+ body:not(.light) .filters button.active{background:var(--green-soft);border-color:var(--green-soft);color:#00a884}
+ body:not(.light) .notification-notice{background:#182f33;color:var(--text)}
+ body:not(.light) .notification-notice button{color:#53bdeb}
+ #tools-dialog.profile-editor>input,.info-action{border-color:var(--line)}
+}
+@media(min-width:1000px){body:not(.light) .day-divider{background:var(--header);color:var(--muted)}body:not(.light) #contacts-dialog.contacts-drawer .contact-name small{color:var(--muted)}body:not(.light) .contact-option:hover{background:var(--header)}}
+.profile-field-edit{display:none}
+@media(min-width:1000px){#tools-dialog.profile-editor>.profile-field-edit{display:grid;place-items:center;position:absolute;right:48px;width:32px;height:32px;padding:6px;color:var(--text);background:transparent}.profile-field-edit.edit-about{top:324px}.profile-field-edit.edit-name{top:488px}.profile-field-edit svg{width:20px;height:20px}}
+.light .message-author{color:#008a7c}
