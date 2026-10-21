@@ -603,13 +603,13 @@ function saveChatSetting(key, value) {
   $("message-input").spellcheck = chatSettings().spellcheck;
   renderMessages();
 }
-const manualMediaLoads = new Set();
+const manuallyLoadedMedia = new Set();
 function mountMedia(container, node, url, kind) {
   const allowed =
     chatSettings()[
       { photo: "autoPhotos", audio: "autoAudio", video: "autoVideos" }[kind]
     ];
-  if (allowed || manualMediaLoads.has(url)) {
+  if (allowed || manuallyLoadedMedia.has(url)) {
     node.src = url;
     container.append(node);
     return;
@@ -619,7 +619,7 @@ function mountMedia(container, node, url, kind) {
   load.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    manualMediaLoads.add(url);
+    manuallyLoadedMedia.add(url);
     node.src = url;
     load.replaceWith(node);
   });

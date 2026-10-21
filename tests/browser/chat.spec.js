@@ -1152,3 +1152,38 @@ test("Unicode 17 catalog has working categories, skin tones, search, artwork and
   ).toBe(true);
   await Promise.all(contexts.map((c) => c.close()));
 });
+
+test("sign out and an expired session both return to the auth screen cleanly", async ({
+  browser,
+}) => {
+  const ac = await browser.newContext(),
+    bc = await browser.newContext();
+  const a = await ac.newPage(),
+    b = await bc.newPage();
+  const id = stamp();
+  await register(a, "Signout user", "so_" + id);
+  // UI sign-out while connected must show the auth screen. Regression: showAuth
+  // crashed on a stale media-cache variable name and left users stuck.
+  await a.getByRole("button", { name: "Account and sign out" }).click();
+  await a.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(a.locator("#auth-screen")).toBeVisible();
+  await expect(a.locator("#app")).toBeHidden();
+  // Registration leaves the form in create mode; switch back to sign in.
+  await a
+    .getByRole("button", { name: "Already have an account? Sign in" })
+    .click();
+  await a.getByLabel("Username", { exact: true }).fill("so_" + id);
+  await a
+    .getByLabel("Password", { exact: true })
+    .fill("Browser-test-password-123");
+  await a.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(a.locator("#connection-status")).toHaveText("Connected");
+  // A session deleted server-side while connected (also what a hosted
+  // scale-to-zero restart with a fresh database looks like) must land on the
+  // auth screen instead of hanging on "Connection interrupted".
+  await register(b, "Wipe user", "wu_" + id);
+  await bc.request.post("/api/logout");
+  await expect(b.locator("#auth-screen")).toBeVisible({ timeout: 15000 });
+  await expect(b.locator("#app")).toBeHidden();
+  await Promise.all([ac.close(), bc.close()]);
+});
